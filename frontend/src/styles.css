@@ -736,7 +736,7 @@ body::before {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 1rem 1.1rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--glass-border);
   flex-shrink: 0;
 }
 
@@ -1052,6 +1052,26 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
+.chrome-btn--soon {
+  opacity: 0.72;
+  cursor: not-allowed;
+  gap: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.soon-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(26, 167, 184, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(26, 167, 184, 0.25);
+}
+
 .profile-cluster--chrome {
   margin-left: 0.25rem;
 }
@@ -1094,6 +1114,38 @@ body::before {
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+}
+
+.stage-inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  animation: stage-shimmer 7s ease-in-out infinite;
+  opacity: 0.3;
+}
+
+.stage-inner > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes stage-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .stage-eyebrow {

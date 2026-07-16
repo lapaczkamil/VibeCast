@@ -1,4 +1,5 @@
 import type { SectionState, SpotifyProfile } from "../types";
+import { ComingSoonButton } from "./ComingSoonButton";
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -41,6 +42,9 @@ export function AppChrome({
         <button type="button" className="chrome-btn" onClick={onOpenSearch}>
           Search
         </button>
+        <ComingSoonButton label="Watchlists" />
+        <ComingSoonButton label="Share vibe" />
+        <ComingSoonButton label="History" />
         <div className="profile-cluster profile-cluster--chrome">
           <div className="avatar" aria-hidden={profile.status !== "ok"}>
             {imageUrl ? (
