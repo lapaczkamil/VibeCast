@@ -295,17 +295,7 @@ export function RecommendStage({
 
         {phase === "ok" && activeMovie ? (
           <>
-            <div
-              className="stage-feature"
-              style={
-                activeMovie.poster_url
-                  ? {
-                      ["--stage-poster" as string]: `url(${tmdbPosterUrl(activeMovie.poster_url, "w780")})`,
-                    }
-                  : undefined
-              }
-            >
-              <div className="stage-feature-glow" aria-hidden="true" />
+            <div className="stage-feature">
               <div
                 className="stage-carousel"
                 onTouchStart={onTouchStart}
@@ -383,18 +373,14 @@ export function RecommendStage({
             </div>
 
             <div key={activeMovie.tmdb_id} className="stage-copy">
-              <div className="stage-copy-meta">
+              <p className="stage-copy-meta">
                 {itemCount > 1 ? (
-                  <span className="stage-chip">
-                    {activeIndex + 1} / {itemCount}
+                  <span>
+                    {activeIndex + 1}/{itemCount}
                   </span>
                 ) : null}
-                {activeMovie.year ? (
-                  <span className="stage-chip stage-chip--muted">
-                    {activeMovie.year}
-                  </span>
-                ) : null}
-              </div>
+                {activeMovie.year ? <span>{activeMovie.year}</span> : null}
+              </p>
               <h2 className="stage-title">{activeMovie.title}</h2>
               {results?.mood_summary ? (
                 <p className="stage-mood">{results.mood_summary}</p>
