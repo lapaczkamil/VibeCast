@@ -40,7 +40,13 @@ def test_login_redirects_to_spotify_when_configured(monkeypatch):
     assert "client_id=test-client-id" in location
     assert "response_type=code" in location
     assert "redirect_uri=http%3A%2F%2F127.0.0.1%3A8000%2Fcallback" in location
-    assert "scope=user-read-recently-played" in location
+    for part in (
+        "user-read-recently-played",
+        "user-read-private",
+        "user-read-currently-playing",
+        "user-top-read",
+    ):
+        assert part in location
     assert "state=" in location
 
 
@@ -150,3 +156,20 @@ def test_callback_exchange_failure_redirects(monkeypatch):
     assert response.status_code == 302
     assert response.headers["location"] == "http://127.0.0.1:5173/?auth_error=1"
     assert oauth.get_tokens() is None
+
+
+def test_logout_clears_tokens():
+    oauth.set_tokens(
+        oauth.TokenSet(access_token="a", refresh_token="r", expires_at=None)
+    )
+    response = client.post("/auth/spotify/logout")
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": False}
+    assert oauth.get_tokens() is None
+    assert client.get("/auth/spotify/status").json() == {"authenticated": False}
+
+
+def test_logout_idempotent_when_logged_out():
+    response = client.post("/auth/spotify/logout")
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": False}

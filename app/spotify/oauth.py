@@ -9,7 +9,10 @@ from app.config import settings
 
 AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
-SCOPE = "user-read-recently-played"
+SCOPE = (
+    "user-read-recently-played user-read-private "
+    "user-read-currently-playing user-top-read"
+)
 
 _tokens: "TokenSet | None" = None
 _pending_state: str | None = None
