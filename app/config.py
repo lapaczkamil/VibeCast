@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
     spotify_redirect_uri: str = "http://127.0.0.1:8000/callback"
+    frontend_url: str = "http://127.0.0.1:5173"
     openai_api_key: str | None = None
 
 

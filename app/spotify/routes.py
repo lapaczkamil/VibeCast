@@ -9,6 +9,13 @@ from app.spotify.schemas import RecentlyPlayedResponse
 router = APIRouter()
 
 
+def _frontend_redirect(path_query: str = "/") -> RedirectResponse:
+    base = settings.frontend_url.rstrip("/")
+    if not path_query.startswith("/"):
+        path_query = "/" + path_query
+    return RedirectResponse(url=f"{base}{path_query}", status_code=302)
+
+
 @router.get("/auth/spotify/login")
 async def spotify_login():
     if not oauth.spotify_credentials_configured():
@@ -24,15 +31,15 @@ async def spotify_callback(
     error: str | None = None,
 ):
     if error:
-        raise HTTPException(status_code=400, detail="Spotify authorization denied")
+        return _frontend_redirect("/?auth_error=1")
     if not code or not state or not oauth.consume_login_state(state):
-        raise HTTPException(status_code=400, detail="Invalid OAuth callback")
+        return _frontend_redirect("/?auth_error=1")
     try:
         token_set = await oauth.exchange_code(code)
     except Exception:
-        raise HTTPException(status_code=502, detail="Failed to exchange Spotify code") from None
+        return _frontend_redirect("/?auth_error=1")
     oauth.set_tokens(token_set)
-    return {"authenticated": True}
+    return _frontend_redirect("/")
 
 
 @router.get("/auth/spotify/status")

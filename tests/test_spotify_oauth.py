@@ -52,7 +52,7 @@ def test_login_returns_503_when_missing_credentials(monkeypatch):
 
 
 @respx.mock
-def test_callback_stores_tokens_and_authenticates(monkeypatch):
+def test_callback_stores_tokens_and_redirects_to_frontend(monkeypatch):
     monkeypatch.setattr(
         "app.spotify.oauth.settings.spotify_client_id",
         "test-client-id",
@@ -64,6 +64,10 @@ def test_callback_stores_tokens_and_authenticates(monkeypatch):
     monkeypatch.setattr(
         "app.spotify.oauth.settings.spotify_redirect_uri",
         "http://127.0.0.1:8000/callback",
+    )
+    monkeypatch.setattr(
+        "app.spotify.routes.settings.frontend_url",
+        "http://127.0.0.1:5173",
     )
     state = oauth.create_login_state()
     respx.post("https://accounts.spotify.com/api/token").mock(
@@ -77,13 +81,13 @@ def test_callback_stores_tokens_and_authenticates(monkeypatch):
             },
         )
     )
-    response = client.get(f"/callback?code=auth-code&state={state}")
-    assert response.status_code == 200
-    body = response.json()
-    assert body == {"authenticated": True}
-    assert "access" not in str(body).lower() or body == {"authenticated": True}
-    assert "refresh_xyz" not in str(body)
-    assert "access-abc" not in str(body)
+    response = client.get(
+        f"/callback?code=auth-code&state={state}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://127.0.0.1:5173/"
+    assert "access-abc" not in response.headers.get("location", "")
     assert client.get("/auth/spotify/status").json() == {"authenticated": True}
     tokens = oauth.get_tokens()
     assert tokens is not None
@@ -91,6 +95,14 @@ def test_callback_stores_tokens_and_authenticates(monkeypatch):
     assert tokens.refresh_token == "refresh-xyz"
 
 
-def test_callback_rejects_bad_state():
-    response = client.get("/callback?code=auth-code&state=wrong")
-    assert response.status_code == 400
+def test_callback_rejects_bad_state_with_frontend_redirect(monkeypatch):
+    monkeypatch.setattr(
+        "app.spotify.routes.settings.frontend_url",
+        "http://127.0.0.1:5173",
+    )
+    response = client.get(
+        "/callback?code=auth-code&state=wrong",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://127.0.0.1:5173/?auth_error=1"
