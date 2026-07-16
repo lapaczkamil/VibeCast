@@ -256,12 +256,16 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
             </p>
           ) : null}
           <div className="listening-footer-row">
-            <span className="listening-footer-count">
-              Seeds: {props.seeds.length}/{MAX_SEEDS}
-            </span>
+            <p className="listening-footer-count">
+              <span className="listening-footer-count-label">Selected</span>
+              <span className="listening-footer-count-value" aria-live="polite">
+                {props.seeds.length}
+                <span className="listening-footer-count-max">/{MAX_SEEDS}</span>
+              </span>
+            </p>
             <button
               type="button"
-              className="cta cta--ghost listening-footer-clear"
+              className="chrome-btn listening-footer-clear"
               disabled={props.seeds.length === 0}
               onClick={props.onClearSeeds}
             >

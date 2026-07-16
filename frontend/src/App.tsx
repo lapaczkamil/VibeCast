@@ -21,15 +21,7 @@ import type {
   TopTracksResponse,
 } from "./types";
 import { toggleSeed } from "./lib/seeds";
-import {
-  applyTheme,
-  getStoredTheme,
-  toggleTheme,
-  type Theme,
-} from "./lib/theme";
-import { ThemeToggle } from "./components/ThemeToggle";
 import { AudioMeters } from "./components/AudioMeters";
-import { NowPlayingDock } from "./components/NowPlayingDock";
 
 function authErrorFromSearch(search: string): boolean {
   return new URLSearchParams(search).get("auth_error") === "1";
@@ -68,15 +60,6 @@ export default function App() {
     useState<SectionState<TopTracksResponse>>(loadingSection);
   const [seeds, setSeeds] = useState<SeedTrack[]>([]);
   const [limitHint, setLimitHint] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
-
-  const handleToggleTheme = useCallback(() => {
-    setTheme((current) => toggleTheme(current));
-  }, []);
-
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
 
   const loadDashboard = useCallback(async () => {
     setMe(loadingSection());
@@ -284,9 +267,6 @@ export default function App() {
     return (
       <div className="app">
         <AudioMeters active />
-        <div className="theme-toggle-float">
-          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        </div>
         <main className="shell shell--center">
           <p className="status-message">Loading…</p>
         </main>
@@ -297,10 +277,7 @@ export default function App() {
   if (authFetchError) {
     return (
       <div className="app">
-        <AudioMeters />
-        <div className="theme-toggle-float">
-          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        </div>
+        <AudioMeters active />
         <main className="shell shell--center">
           <p className="status-message status-message--error">{authFetchError}</p>
           <button type="button" className="cta cta--ghost" onClick={loadAuth}>
@@ -315,9 +292,6 @@ export default function App() {
     return (
       <div className="app">
         <AudioMeters active />
-        <div className="theme-toggle-float">
-          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        </div>
         <main className="shell shell--landing">
           <h1 className="brand brand--hero">VibeCast</h1>
           <p className="subtitle">Films tuned to your signal.</p>
@@ -353,12 +327,11 @@ export default function App() {
       <AudioMeters active={isPlaying} />
       <AppChrome
         profile={me}
+        currentlyPlaying={currentlyPlaying}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
         onOpenListening={() => setDrawer("listening")}
         onOpenSearch={() => setDrawer("search")}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
       />
       <main className="shell shell--stage">
         <RecommendStage
@@ -369,10 +342,6 @@ export default function App() {
           onRemoveSeed={handleRemoveSeed}
         />
       </main>
-      <NowPlayingDock
-        currentlyPlaying={currentlyPlaying}
-        onOpenListening={() => setDrawer("listening")}
-      />
       <ListeningDrawer
         open={drawer === "listening"}
         onClose={closeDrawer}

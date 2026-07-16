@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchRagStatus, requestRecommendations } from "../api";
 import { nextIndex, prevIndex } from "../lib/carouselIndex";
+import {
+  applyPosterPalette,
+  clearPosterPalette,
+  extractPosterPalette,
+} from "../lib/posterPalette";
 import { tmdbPosterUrl } from "../lib/tmdbPoster";
 import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
 
@@ -87,6 +92,35 @@ export function RecommendStage({
   const items = results?.items ?? [];
   const itemCount = items.length;
   const activeMovie = phase === "ok" ? items[activeIndex] : undefined;
+  const activePosterUrl = activeMovie
+    ? tmdbPosterUrl(activeMovie.poster_url, "w500")
+    : null;
+
+  useEffect(() => {
+    if (!activePosterUrl) {
+      clearPosterPalette();
+      return;
+    }
+
+    let cancelled = false;
+    void extractPosterPalette(activePosterUrl)
+      .then((palette) => {
+        if (!cancelled) applyPosterPalette(palette);
+      })
+      .catch(() => {
+        if (!cancelled) clearPosterPalette();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePosterUrl]);
+
+  useEffect(() => {
+    return () => {
+      clearPosterPalette();
+    };
+  }, []);
 
   const goNext = useCallback(() => {
     setActiveIndex((current) => nextIndex(current, itemCount));
@@ -318,6 +352,7 @@ export function RecommendStage({
                             width={390}
                             height={585}
                             draggable={false}
+                            crossOrigin="anonymous"
                             loading={role === "current" ? "eager" : "lazy"}
                             decoding="async"
                           />

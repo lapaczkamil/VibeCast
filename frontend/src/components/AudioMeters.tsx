@@ -1,10 +1,11 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 type AudioMetersProps = {
+  /** Stronger pulse while Spotify is actively playing. */
   active?: boolean;
 };
 
-type MeterPhase = "idle" | "live" | "coasting";
+type MeterPhase = "ambient" | "live" | "coasting";
 
 const COAST_MS = 3800;
 
@@ -17,21 +18,19 @@ const BARS = [
 ];
 
 export function AudioMeters({ active = false }: AudioMetersProps) {
-  const [phase, setPhase] = useState<MeterPhase>(active ? "live" : "idle");
+  const [phase, setPhase] = useState<MeterPhase>(active ? "live" : "ambient");
 
   useEffect(() => {
     if (active) {
       setPhase("live");
       return;
     }
-    setPhase((current) =>
-      current === "live" || current === "coasting" ? "coasting" : "idle",
-    );
+    setPhase((current) => (current === "live" ? "coasting" : "ambient"));
   }, [active]);
 
   useEffect(() => {
     if (phase !== "coasting") return;
-    const id = window.setTimeout(() => setPhase("idle"), COAST_MS);
+    const id = window.setTimeout(() => setPhase("ambient"), COAST_MS);
     return () => window.clearTimeout(id);
   }, [phase]);
 
@@ -40,7 +39,7 @@ export function AudioMeters({ active = false }: AudioMetersProps) {
       ? " audio-meters-bg--live"
       : phase === "coasting"
         ? " audio-meters-bg--coasting"
-        : "";
+        : " audio-meters-bg--ambient";
 
   return (
     <div

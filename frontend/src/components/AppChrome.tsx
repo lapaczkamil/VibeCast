@@ -1,6 +1,9 @@
-import type { SectionState, SpotifyProfile } from "../types";
-import type { Theme } from "../lib/theme";
-import { ThemeToggle } from "./ThemeToggle";
+import type {
+  CurrentlyPlayingResponse,
+  SectionState,
+  SpotifyProfile,
+} from "../types";
+import { NowPlayingDock } from "./NowPlayingDock";
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -11,22 +14,20 @@ function initialsFromName(name: string): string {
 
 type AppChromeProps = {
   profile: SectionState<SpotifyProfile>;
+  currentlyPlaying: SectionState<CurrentlyPlayingResponse>;
   loggingOut: boolean;
   onLogout: () => void;
   onOpenListening: () => void;
   onOpenSearch: () => void;
-  theme: Theme;
-  onToggleTheme: () => void;
 };
 
 export function AppChrome({
   profile,
+  currentlyPlaying,
   loggingOut,
   onLogout,
   onOpenListening,
   onOpenSearch,
-  theme,
-  onToggleTheme,
 }: AppChromeProps) {
   const displayName =
     profile.status === "ok" ? profile.data!.display_name : "…";
@@ -56,8 +57,12 @@ export function AppChrome({
           </nav>
         </div>
 
+        <NowPlayingDock
+          currentlyPlaying={currentlyPlaying}
+          onOpenListening={onOpenListening}
+        />
+
         <div className="chrome-right">
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <div className="profile-cluster profile-cluster--chrome">
             <div className="avatar" aria-hidden={profile.status !== "ok"}>
               {imageUrl ? (
