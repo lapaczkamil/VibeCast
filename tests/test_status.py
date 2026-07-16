@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from main import app, settings
+from app.main import app
+from app.config import settings
 
 
 client = TestClient(app)
@@ -19,8 +20,8 @@ def test_status_returns_ok():
 
 
 def test_settings_defaults_are_optional():
-    assert settings.app_name == "VibeCast" or isinstance(settings.app_name, str)
-    # Optional secrets must not crash startup; values may be "" or None
+    assert isinstance(settings.app_name, str)
     assert settings.spotify_client_id in (None, "")
     assert settings.spotify_client_secret in (None, "")
     assert settings.openai_api_key in (None, "")
+    assert settings.spotify_redirect_uri == "http://127.0.0.1:8000/callback"
