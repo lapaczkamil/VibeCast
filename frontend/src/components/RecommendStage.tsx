@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchRagStatus, requestRecommendations } from "../api";
 import { nextIndex, prevIndex } from "../lib/carouselIndex";
+import { tmdbPosterUrl } from "../lib/tmdbPoster";
 import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
 
 type RecommendPhase = "idle" | "loading" | "empty" | "ok" | "error";
@@ -9,15 +10,35 @@ type RecommendStageProps = {
   drawerOpen: boolean;
   seeds: SeedTrack[];
   hasNowPlaying: boolean;
+  isPlaying: boolean;
   onRemoveSeed: (id: string) => void;
 };
 
 const SWIPE_THRESHOLD_PX = 50;
 
+type StackCardRole = "prev" | "current" | "next" | "hidden";
+
+function stackCardRole(
+  index: number,
+  active: number,
+  count: number,
+): StackCardRole {
+  if (count <= 0) return "hidden";
+  if (index === active) return "current";
+  if (count === 1) return "hidden";
+  const next = nextIndex(active, count);
+  const prev = prevIndex(active, count);
+  if (index === next) return "next";
+  // When only 2 items, next === prev — show a single peek behind.
+  if (index === prev && prev !== next) return "prev";
+  return "hidden";
+}
+
 export function RecommendStage({
   drawerOpen,
   seeds,
   hasNowPlaying,
+  isPlaying,
   onRemoveSeed,
 }: RecommendStageProps) {
   const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
@@ -120,10 +141,10 @@ export function RecommendStage({
 
   const primaryLabel =
     phase === "loading"
-      ? "Finding picks…"
+      ? "Matching…"
       : phase === "ok"
-        ? "Match again"
-        : "Recommend movies";
+        ? "Run again"
+        : "Recommend";
 
   return (
     <section className="stage" aria-label="Movie recommendations">
@@ -136,7 +157,25 @@ export function RecommendStage({
         aria-hidden="true"
       />
       <div className="stage-inner">
-        <p className="stage-eyebrow">For your vibe</p>
+        {phase === "idle" || phase === "error" || phase === "empty" ? (
+          <header className="stage-intro">
+            <p className="stage-eyebrow">Music → Movie</p>
+            <h2 className="stage-heading">Match films to the mood in your mix</h2>
+            <p className="stage-lede">
+              Pull seed tracks from Listening, drop in a search hit, or ride
+              what's playing — then run the match.
+            </p>
+            <p className="stage-signal-meta">
+              <span>
+                Seeds: <strong>{seeds.length}/5</strong>
+              </span>
+            </p>
+          </header>
+        ) : (
+          <p className="stage-eyebrow">
+            {isPlaying ? "Live match" : "Matched"}
+          </p>
+        )}
 
         {statusError ? (
           <p className="status-message status-message--error" role="alert">
@@ -192,23 +231,21 @@ export function RecommendStage({
         ) : null}
 
         {phase === "idle" ? (
-          <div
-            className="stage-poster stage-poster--placeholder"
-            aria-hidden="true"
-          >
-            ?
+          <div className="stage-stack stage-stack--solo" aria-hidden="true">
+            <div className="stage-stack-card stage-stack-card--current stage-poster stage-poster--placeholder">
+              ?
+            </div>
           </div>
         ) : null}
 
         {phase === "loading" ? (
           <>
-            <div
-              className="stage-poster stage-poster--skeleton"
-              aria-hidden="true"
-            />
+            <div className="stage-stack stage-stack--solo" aria-hidden="true">
+              <div className="stage-stack-card stage-stack-card--current stage-poster stage-poster--skeleton" />
+            </div>
             <p className="status-message section-status">
-              Matching movies to your vibe…
-            </p>
+            Matching the mood in your tracks…
+          </p>
           </>
         ) : null}
 
@@ -225,60 +262,110 @@ export function RecommendStage({
         {phase === "ok" && activeMovie ? (
           <>
             <div
-              className="stage-carousel"
-              onTouchStart={onTouchStart}
-              onTouchEnd={onTouchEnd}
+              className="stage-feature"
+              style={
+                activeMovie.poster_url
+                  ? {
+                      ["--stage-poster" as string]: `url(${tmdbPosterUrl(activeMovie.poster_url, "w780")})`,
+                    }
+                  : undefined
+              }
             >
-              {itemCount > 1 ? (
-                <button
-                  type="button"
-                  className="stage-nav"
-                  onClick={goPrev}
-                  aria-label="Previous recommendation"
-                >
-                  ‹
-                </button>
-              ) : null}
-              {activeMovie.poster_url ? (
-                <img
-                  key={activeMovie.tmdb_id}
-                  className="stage-poster"
-                  src={activeMovie.poster_url}
-                  alt=""
-                  width={200}
-                  height={300}
-                />
-              ) : (
+              <div className="stage-feature-glow" aria-hidden="true" />
+              <div
+                className="stage-carousel"
+                onTouchStart={onTouchStart}
+                onTouchEnd={onTouchEnd}
+              >
+                {itemCount > 1 ? (
+                  <button
+                    type="button"
+                    className="stage-nav"
+                    onClick={goPrev}
+                    aria-label="Previous recommendation"
+                  >
+                    ‹
+                  </button>
+                ) : null}
+
                 <div
-                  key={activeMovie.tmdb_id}
-                  className="stage-poster stage-poster--placeholder"
-                  aria-hidden="true"
+                  className={
+                    itemCount > 1
+                      ? "stage-stack"
+                      : "stage-stack stage-stack--solo"
+                  }
+                  aria-live="polite"
                 >
-                  ?
+                  {items.map((movie, index) => {
+                    const role = stackCardRole(index, activeIndex, itemCount);
+                    const poster = tmdbPosterUrl(movie.poster_url, "w780");
+                    const posterSrcSet = poster
+                      ? `${tmdbPosterUrl(movie.poster_url, "w500")} 500w, ${poster} 780w`
+                      : undefined;
+                    return (
+                      <div
+                        key={movie.tmdb_id}
+                        className={`stage-stack-card stage-stack-card--${role}`}
+                        aria-hidden={role !== "current"}
+                      >
+                        {poster ? (
+                          <img
+                            className="stage-poster"
+                            src={poster}
+                            srcSet={posterSrcSet}
+                            sizes="(max-width: 640px) 55vw, 22rem"
+                            alt=""
+                            width={390}
+                            height={585}
+                            draggable={false}
+                            loading={role === "current" ? "eager" : "lazy"}
+                            decoding="async"
+                          />
+                        ) : (
+                          <div
+                            className="stage-poster stage-poster--placeholder"
+                            aria-hidden="true"
+                          >
+                            ?
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              {itemCount > 1 ? (
-                <button
-                  type="button"
-                  className="stage-nav"
-                  onClick={goNext}
-                  aria-label="Next recommendation"
-                >
-                  ›
-                </button>
-              ) : null}
+
+                {itemCount > 1 ? (
+                  <button
+                    type="button"
+                    className="stage-nav"
+                    onClick={goNext}
+                    aria-label="Next recommendation"
+                  >
+                    ›
+                  </button>
+                ) : null}
+              </div>
             </div>
 
-            <h2 key={activeMovie.tmdb_id} className="stage-title">
-              {activeMovie.title}
-            </h2>
-            {activeMovie.year ? (
-              <p className="stage-year">{activeMovie.year}</p>
-            ) : null}
-            {results?.mood_summary ? (
-              <p className="stage-mood">{results.mood_summary}</p>
-            ) : null}
-            <p className="stage-reason">{activeMovie.reason}</p>
+            <div key={activeMovie.tmdb_id} className="stage-copy">
+              <div className="stage-copy-meta">
+                {itemCount > 1 ? (
+                  <span className="stage-chip">
+                    {activeIndex + 1} / {itemCount}
+                  </span>
+                ) : null}
+                {activeMovie.year ? (
+                  <span className="stage-chip stage-chip--muted">
+                    {activeMovie.year}
+                  </span>
+                ) : null}
+              </div>
+              <h2 className="stage-title">{activeMovie.title}</h2>
+              {results?.mood_summary ? (
+                <p className="stage-mood">{results.mood_summary}</p>
+              ) : null}
+              <p className="stage-reason">{activeMovie.reason}</p>
+            </div>
 
             {itemCount > 1 ? (
               <div

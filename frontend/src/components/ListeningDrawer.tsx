@@ -6,7 +6,6 @@ import type {
   RecentlyPlayedResponse,
   SectionState,
   SeedTrack,
-  TopArtistsResponse,
   TopTracksResponse,
   TrackSearchItem,
 } from "../types";
@@ -14,7 +13,6 @@ import { MAX_SEEDS } from "../types";
 import { Drawer } from "./Drawer";
 import { DashboardSection } from "./DashboardSection";
 import { NowPlaying } from "./NowPlaying";
-import { ArtistList } from "./ArtistList";
 import { RecentTrackList, TopTrackList } from "./TrackList";
 
 type ListeningDrawerProps = {
@@ -23,7 +21,6 @@ type ListeningDrawerProps = {
   currentlyPlaying: SectionState<CurrentlyPlayingResponse>;
   recentlyPlayed: SectionState<RecentlyPlayedResponse>;
   topTracks: SectionState<TopTracksResponse>;
-  topArtists: SectionState<TopArtistsResponse>;
   seeds: SeedTrack[];
   onToggleSeed: (track: SeedTrack) => void;
   onClearSeeds: () => void;
@@ -31,7 +28,6 @@ type ListeningDrawerProps = {
   onRetryCurrentlyPlaying: () => void;
   onRetryRecentlyPlayed: () => void;
   onRetryTopTracks: () => void;
-  onRetryTopArtists: () => void;
 };
 
 function SearchResultRow({
@@ -250,14 +246,6 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
                 disabledAdd={disabledAdd}
               />
             )}
-          </DashboardSection>
-
-          <DashboardSection
-            title="Top artists"
-            state={props.topArtists}
-            onRetry={props.onRetryTopArtists}
-          >
-            {(data) => <ArtistList items={data.items} />}
           </DashboardSection>
         </div>
 

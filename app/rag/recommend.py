@@ -188,7 +188,7 @@ def _map_validated_items(
                 tmdb_id=int(tmdb_id),
                 title=str(item.get("title") or meta.get("title") or "Unknown"),
                 year=meta.get("year"),
-                poster_url=_map_poster_url(meta.get("poster_path")),
+                poster_url=_map_poster_url(meta.get("poster_path"), size="w780"),
                 reason=str(item.get("reason") or ""),
             )
         )

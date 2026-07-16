@@ -46,6 +46,32 @@ function SeedToggle({
   );
 }
 
+function TrackArt({
+  imageUrl,
+  label,
+}: {
+  imageUrl: string | null | undefined;
+  label: string;
+}) {
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        className="track-art"
+        width={40}
+        height={40}
+        loading="lazy"
+      />
+    );
+  }
+  return (
+    <span className="track-art track-art--placeholder" aria-hidden="true">
+      {label.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 export function RecentTrackList({
   items,
   selectedIds,
@@ -84,6 +110,7 @@ export function RecentTrackList({
                 disabledAdd={disabledAdd}
               />
             ) : null}
+            <TrackArt imageUrl={track.image_url} label={track.name} />
             <div className="track-main">
               <a
                 href={track.spotify_url}
@@ -148,6 +175,7 @@ export function TopTrackList({
             <span className="track-rank" aria-hidden="true">
               {index + 1}
             </span>
+            <TrackArt imageUrl={track.image_url} label={track.name} />
             <div className="track-main">
               <a
                 href={track.spotify_url}

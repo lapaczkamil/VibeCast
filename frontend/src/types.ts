@@ -9,6 +9,7 @@ export type RecentlyPlayedItem = {
   artists: string[];
   album: string;
   spotify_url: string;
+  image_url: string | null;
 };
 
 export type RecentlyPlayedResponse = {
@@ -43,22 +44,11 @@ export type TopTrackItem = {
   artists: string[];
   album: string;
   spotify_url: string;
+  image_url: string | null;
 };
 
 export type TopTracksResponse = {
   items: TopTrackItem[];
-};
-
-export type TopArtistItem = {
-  artist_id: string;
-  name: string;
-  genres: string[];
-  image_url: string | null;
-  spotify_url: string;
-};
-
-export type TopArtistsResponse = {
-  items: TopArtistItem[];
 };
 
 export type SectionState<T> = {

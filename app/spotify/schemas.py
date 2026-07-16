@@ -8,6 +8,7 @@ class RecentlyPlayedItem(BaseModel):
     artists: list[str]
     album: str
     spotify_url: str
+    image_url: str | None
 
 
 class RecentlyPlayedResponse(BaseModel):
@@ -42,6 +43,7 @@ class TopTrackItem(BaseModel):
     artists: list[str]
     album: str
     spotify_url: str
+    image_url: str | None
 
 
 class TopTracksResponse(BaseModel):

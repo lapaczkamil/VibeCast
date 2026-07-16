@@ -8,7 +8,6 @@ import type {
   RecommendResponse,
   SeedTrack,
   SpotifyProfile,
-  TopArtistsResponse,
   TopTracksResponse,
   TrackSearchResponse,
 } from "./types";
@@ -73,21 +72,6 @@ export async function fetchTopTracks(
   const res = await fetch(`/api/spotify/top/tracks?${params}`);
   if (!res.ok) {
     throw new Error("Failed to load top tracks");
-  }
-  return res.json();
-}
-
-export async function fetchTopArtists(
-  limit = 10,
-  timeRange = "medium_term",
-): Promise<TopArtistsResponse> {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    time_range: timeRange,
-  });
-  const res = await fetch(`/api/spotify/top/artists?${params}`);
-  if (!res.ok) {
-    throw new Error("Failed to load top artists");
   }
   return res.json();
 }

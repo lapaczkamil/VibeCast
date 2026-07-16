@@ -3,7 +3,8 @@ import httpx
 from app.movies.schemas import MovieItem, MovieSearchResponse
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
-POSTER_BASE_URL = "https://image.tmdb.org/t/p/w185"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
+POSTER_BASE_URL = f"{TMDB_IMAGE_BASE}/w342"
 TMDB_TIMEOUT = httpx.Timeout(10.0)
 
 
@@ -69,9 +70,9 @@ def _map_year(release_date: str | None) -> str | None:
     return None
 
 
-def _map_poster_url(poster_path: str | None) -> str | None:
+def _map_poster_url(poster_path: str | None, size: str = "w342") -> str | None:
     if poster_path:
-        return f"{POSTER_BASE_URL}{poster_path}"
+        return f"{TMDB_IMAGE_BASE}/{size}{poster_path}"
     return None
 
 
