@@ -86,3 +86,45 @@ export type MovieSearchResponse = {
   total_results: number;
   items: MovieItem[];
 };
+
+export type RagStatus = {
+  index_ready: boolean;
+  document_count: number;
+  ollama_reachable: boolean;
+  embed_model: string;
+  chat_model: string;
+};
+
+export type RecommendMovieItem = {
+  tmdb_id: number;
+  title: string;
+  year: string | null;
+  poster_url: string | null;
+  reason: string;
+};
+
+export type RecommendResponse = {
+  mood_summary: string;
+  items: RecommendMovieItem[];
+};
+
+export type SeedTrack = {
+  id: string;
+  name: string;
+  artists: string[];
+};
+
+export const MAX_SEEDS = 5;
+
+export type TrackSearchItem = {
+  id: string;
+  name: string;
+  artists: string[];
+  album: string;
+  spotify_url: string;
+  image_url: string | null;
+};
+
+export type TrackSearchResponse = {
+  items: TrackSearchItem[];
+};

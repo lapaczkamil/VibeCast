@@ -9,20 +9,20 @@ import {
   logoutSpotify,
   startSpotifyLogin,
 } from "./api";
-import { ArtistList } from "./components/ArtistList";
-import { DashboardSection } from "./components/DashboardSection";
-import { NowPlaying } from "./components/NowPlaying";
-import { ProfileHeader } from "./components/ProfileHeader";
-import { MoviesSearch } from "./components/MoviesSearch";
-import { RecentTrackList, TopTrackList } from "./components/TrackList";
+import { AppChrome } from "./components/AppChrome";
+import { ListeningDrawer } from "./components/ListeningDrawer";
+import { RecommendStage } from "./components/RecommendStage";
+import { SearchDrawer } from "./components/SearchDrawer";
 import type {
   CurrentlyPlayingResponse,
   RecentlyPlayedResponse,
   SectionState,
+  SeedTrack,
   SpotifyProfile,
   TopArtistsResponse,
   TopTracksResponse,
 } from "./types";
+import { toggleSeed } from "./lib/seeds";
 
 function authErrorFromSearch(search: string): boolean {
   return new URLSearchParams(search).get("auth_error") === "1";
@@ -50,6 +50,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authFetchError, setAuthFetchError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [drawer, setDrawer] = useState<null | "listening" | "search">(null);
 
   const [me, setMe] = useState<SectionState<SpotifyProfile>>(loadingSection);
   const [currentlyPlaying, setCurrentlyPlaying] =
@@ -60,6 +61,8 @@ export default function App() {
     useState<SectionState<TopTracksResponse>>(loadingSection);
   const [topArtists, setTopArtists] =
     useState<SectionState<TopArtistsResponse>>(loadingSection);
+  const [seeds, setSeeds] = useState<SeedTrack[]>([]);
+  const [limitHint, setLimitHint] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setMe(loadingSection());
@@ -114,12 +117,131 @@ export default function App() {
     } finally {
       setLoggingOut(false);
       setAuthenticated(false);
+      setDrawer(null);
       setMe(loadingSection());
       setCurrentlyPlaying(loadingSection());
       setRecentlyPlayed(loadingSection());
       setTopTracks(loadingSection());
       setTopArtists(loadingSection());
+      setSeeds([]);
+      setLimitHint(null);
     }
+  }, []);
+
+  const handleToggleSeed = useCallback((track: SeedTrack) => {
+    setSeeds((current) => {
+      const { seeds: next, rejected } = toggleSeed(current, track);
+      if (rejected) {
+        setLimitHint("You can select at most 5 seed tracks.");
+      } else {
+        setLimitHint(null);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSeeds = useCallback(() => {
+    setSeeds([]);
+    setLimitHint(null);
+  }, []);
+
+  const handleRemoveSeed = useCallback((id: string) => {
+    setSeeds((current) => current.filter((s) => s.id !== id));
+    setLimitHint(null);
+  }, []);
+
+  const closeDrawer = useCallback(() => setDrawer(null), []);
+
+  const refreshCurrentlyPlaying = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setCurrentlyPlaying(loadingSection());
+    }
+    try {
+      const data = await fetchCurrentlyPlaying();
+      setCurrentlyPlaying({ status: "ok", data });
+    } catch (err: unknown) {
+      if (opts?.silent) {
+        // Keep last good snapshot during background polls.
+        return;
+      }
+      setCurrentlyPlaying({
+        status: "error",
+        error:
+          err instanceof Error ? err.message : "Failed to load now playing",
+      });
+    }
+  }, []);
+
+  const retryCurrentlyPlaying = useCallback(() => {
+    void refreshCurrentlyPlaying();
+  }, [refreshCurrentlyPlaying]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const POLL_MS = 15_000;
+
+    const tick = () => {
+      if (document.visibilityState === "hidden") return;
+      void refreshCurrentlyPlaying({ silent: true });
+    };
+
+    const id = window.setInterval(tick, POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [authenticated, refreshCurrentlyPlaying]);
+
+  useEffect(() => {
+    if (drawer !== "listening" || !authenticated) return;
+    void refreshCurrentlyPlaying({ silent: true });
+  }, [drawer, authenticated, refreshCurrentlyPlaying]);
+
+  const retryRecentlyPlayed = useCallback(() => {
+    setRecentlyPlayed(loadingSection());
+    void fetchRecentlyPlayed(10)
+      .then((data) => setRecentlyPlayed({ status: "ok", data }))
+      .catch((err: unknown) =>
+        setRecentlyPlayed({
+          status: "error",
+          error:
+            err instanceof Error
+              ? err.message
+              : "Failed to load recently played",
+        }),
+      );
+  }, []);
+
+  const retryTopTracks = useCallback(() => {
+    setTopTracks(loadingSection());
+    void fetchTopTracks(10, "medium_term")
+      .then((data) => setTopTracks({ status: "ok", data }))
+      .catch((err: unknown) =>
+        setTopTracks({
+          status: "error",
+          error:
+            err instanceof Error ? err.message : "Failed to load top tracks",
+        }),
+      );
+  }, []);
+
+  const retryTopArtists = useCallback(() => {
+    setTopArtists(loadingSection());
+    void fetchTopArtists(10, "medium_term")
+      .then((data) => setTopArtists({ status: "ok", data }))
+      .catch((err: unknown) =>
+        setTopArtists({
+          status: "error",
+          error:
+            err instanceof Error ? err.message : "Failed to load top artists",
+        }),
+      );
   }, []);
 
   useEffect(() => {
@@ -174,109 +296,49 @@ export default function App() {
           >
             Log in with Spotify
           </button>
-          <MoviesSearch showTitle />
         </main>
       </div>
     );
   }
 
+  const hasNowPlaying =
+    currentlyPlaying.status === "ok" &&
+    currentlyPlaying.data?.track != null;
+
   return (
-    <div className="app">
-      <ProfileHeader
+    <div className="app app--stage">
+      <AppChrome
         profile={me}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
+        onOpenListening={() => setDrawer("listening")}
+        onOpenSearch={() => setDrawer("search")}
       />
-      <main className="shell shell--logged-in">
-        <DashboardSection
-          title="Now playing"
-          state={currentlyPlaying}
-          onRetry={() => {
-            setCurrentlyPlaying(loadingSection());
-            void fetchCurrentlyPlaying()
-              .then((data) => setCurrentlyPlaying({ status: "ok", data }))
-              .catch((err: unknown) =>
-                setCurrentlyPlaying({
-                  status: "error",
-                  error:
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to load now playing",
-                }),
-              );
-          }}
-        >
-          {(data) => <NowPlaying data={data} />}
-        </DashboardSection>
-
-        <DashboardSection
-          title="Recently played"
-          state={recentlyPlayed}
-          onRetry={() => {
-            setRecentlyPlayed(loadingSection());
-            void fetchRecentlyPlayed(10)
-              .then((data) => setRecentlyPlayed({ status: "ok", data }))
-              .catch((err: unknown) =>
-                setRecentlyPlayed({
-                  status: "error",
-                  error:
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to load recently played",
-                }),
-              );
-          }}
-        >
-          {(data) => <RecentTrackList items={data.items} />}
-        </DashboardSection>
-
-        <DashboardSection
-          title="Top tracks"
-          state={topTracks}
-          onRetry={() => {
-            setTopTracks(loadingSection());
-            void fetchTopTracks(10, "medium_term")
-              .then((data) => setTopTracks({ status: "ok", data }))
-              .catch((err: unknown) =>
-                setTopTracks({
-                  status: "error",
-                  error:
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to load top tracks",
-                }),
-              );
-          }}
-        >
-          {(data) => <TopTrackList items={data.items} />}
-        </DashboardSection>
-
-        <DashboardSection
-          title="Top artists"
-          state={topArtists}
-          onRetry={() => {
-            setTopArtists(loadingSection());
-            void fetchTopArtists(10, "medium_term")
-              .then((data) => setTopArtists({ status: "ok", data }))
-              .catch((err: unknown) =>
-                setTopArtists({
-                  status: "error",
-                  error:
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to load top artists",
-                }),
-              );
-          }}
-        >
-          {(data) => <ArtistList items={data.items} />}
-        </DashboardSection>
-
-        <section className="dashboard-section">
-          <h2 className="section-title">Movies</h2>
-          <MoviesSearch />
-        </section>
+      <main className="shell shell--stage">
+        <RecommendStage
+          drawerOpen={drawer !== null}
+          seeds={seeds}
+          hasNowPlaying={hasNowPlaying}
+          onRemoveSeed={handleRemoveSeed}
+        />
       </main>
+      <ListeningDrawer
+        open={drawer === "listening"}
+        onClose={closeDrawer}
+        currentlyPlaying={currentlyPlaying}
+        recentlyPlayed={recentlyPlayed}
+        topTracks={topTracks}
+        topArtists={topArtists}
+        seeds={seeds}
+        onToggleSeed={handleToggleSeed}
+        onClearSeeds={handleClearSeeds}
+        limitHint={limitHint}
+        onRetryCurrentlyPlaying={retryCurrentlyPlaying}
+        onRetryRecentlyPlayed={retryRecentlyPlayed}
+        onRetryTopTracks={retryTopTracks}
+        onRetryTopArtists={retryTopArtists}
+      />
+      <SearchDrawer open={drawer === "search"} onClose={closeDrawer} />
     </div>
   );
 }

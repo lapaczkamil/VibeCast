@@ -3,10 +3,14 @@ import type {
   CurrentlyPlayingResponse,
   MovieSearchResponse,
   MoviesStatus,
+  RagStatus,
   RecentlyPlayedResponse,
+  RecommendResponse,
+  SeedTrack,
   SpotifyProfile,
   TopArtistsResponse,
   TopTracksResponse,
+  TrackSearchResponse,
 } from "./types";
 
 async function errorMessageFromResponse(
@@ -138,6 +142,92 @@ export async function searchMovies(
     }
     throw new Error(
       await errorMessageFromResponse(res, "Movie search failed"),
+    );
+  }
+  return res.json();
+}
+
+export async function fetchRagStatus(): Promise<RagStatus> {
+  const res = await fetch("/api/rag/status");
+  if (!res.ok) {
+    throw new Error("Failed to load RAG status");
+  }
+  return res.json();
+}
+
+export async function searchSpotifyTracks(
+  q: string,
+  limit = 10,
+): Promise<TrackSearchResponse> {
+  const params = new URLSearchParams({
+    q,
+    limit: String(limit),
+  });
+  const res = await fetch(`/api/spotify/search?${params}`);
+  if (!res.ok) {
+    if (res.status === 400) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Enter a search query"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Track search failed"),
+    );
+  }
+  return res.json();
+}
+
+export async function requestRecommendations(
+  tracks: SeedTrack[],
+): Promise<RecommendResponse> {
+  const res = await fetch("/api/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tracks: tracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        artists: track.artists,
+      })),
+    }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Not authenticated"),
+      );
+    }
+    if (res.status === 400) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "Select seed tracks or play something on Spotify",
+        ),
+      );
+    }
+    if (res.status === 422) {
+      throw new Error(
+        await errorMessageFromResponse(res, "At most 5 tracks allowed"),
+      );
+    }
+    if (res.status === 503) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "Recommendations unavailable; check Ollama and movie index",
+        ),
+      );
+    }
+    if (res.status === 502) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "Failed to parse recommendation response",
+        ),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Recommendation request failed"),
     );
   }
   return res.json();
