@@ -1,3 +1,4 @@
+import httpx
 import respx
 from httpx import Response
 from fastapi.testclient import TestClient
@@ -34,6 +35,17 @@ def test_movies_status_configured_unreachable(monkeypatch):
     monkeypatch.setattr(movies_routes.settings, "tmdb_api_key", "test-key")
     respx.get("https://api.themoviedb.org/3/configuration").mock(
         return_value=Response(401, json={"status_message": "Invalid"})
+    )
+    response = client.get("/movies/status")
+    assert response.status_code == 200
+    assert response.json() == {"configured": True, "reachable": False}
+
+
+@respx.mock
+def test_movies_status_configured_transport_error(monkeypatch):
+    monkeypatch.setattr(movies_routes.settings, "tmdb_api_key", "test-key")
+    respx.get("https://api.themoviedb.org/3/configuration").mock(
+        side_effect=httpx.ConnectError("Connection refused")
     )
     response = client.get("/movies/status")
     assert response.status_code == 200
@@ -90,3 +102,14 @@ def test_movies_search_upstream_error(monkeypatch):
         return_value=Response(500, json={"status_message": "fail"})
     )
     assert client.get("/movies/search?q=x").status_code == 502
+
+
+@respx.mock
+def test_movies_search_transport_error(monkeypatch):
+    monkeypatch.setattr(movies_routes.settings, "tmdb_api_key", "test-key")
+    respx.get("https://api.themoviedb.org/3/search/movie").mock(
+        side_effect=httpx.ConnectError("Connection refused")
+    )
+    response = client.get("/movies/search?q=x")
+    assert response.status_code == 502
+    assert response.json() == {"detail": "TMDB API request failed"}

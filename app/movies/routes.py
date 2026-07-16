@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app.config import settings
@@ -16,11 +17,12 @@ router = APIRouter()
 async def movies_status() -> MoviesStatus:
     if not tmdb_configured(settings.tmdb_api_key):
         return MoviesStatus(configured=False, reachable=False)
-    response = await fetch_configuration(settings.tmdb_api_key)
-    return MoviesStatus(
-        configured=True,
-        reachable=response.status_code == 200,
-    )
+    try:
+        response = await fetch_configuration(settings.tmdb_api_key)
+        reachable = response.status_code == 200
+    except httpx.HTTPError:
+        reachable = False
+    return MoviesStatus(configured=True, reachable=reachable)
 
 
 @router.get("/movies/search", response_model=MovieSearchResponse)
@@ -34,9 +36,12 @@ async def movies_search(
     if not tmdb_configured(settings.tmdb_api_key):
         raise HTTPException(status_code=503, detail="TMDB API key not configured")
     clamped_page = max(1, page)
-    response = await fetch_movie_search(
-        settings.tmdb_api_key, query, clamped_page
-    )
+    try:
+        response = await fetch_movie_search(
+            settings.tmdb_api_key, query, clamped_page
+        )
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="TMDB API request failed")
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail="TMDB API request failed")
     return map_search_results(response.json(), query, clamped_page)

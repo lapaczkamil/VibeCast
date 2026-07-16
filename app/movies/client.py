@@ -4,6 +4,7 @@ from app.movies.schemas import MovieItem, MovieSearchResponse
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w185"
+TMDB_TIMEOUT = httpx.Timeout(10.0)
 
 
 def tmdb_configured(api_key: str | None) -> bool:
@@ -11,7 +12,7 @@ def tmdb_configured(api_key: str | None) -> bool:
 
 
 async def fetch_configuration(api_key: str) -> httpx.Response:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
         return await client.get(
             f"{TMDB_BASE_URL}/configuration",
             params={"api_key": api_key},
@@ -19,7 +20,7 @@ async def fetch_configuration(api_key: str) -> httpx.Response:
 
 
 async def fetch_movie_search(api_key: str, query: str, page: int) -> httpx.Response:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
         return await client.get(
             f"{TMDB_BASE_URL}/search/movie",
             params={"api_key": api_key, "query": query, "page": page},
