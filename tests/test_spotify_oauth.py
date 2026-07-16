@@ -106,3 +106,47 @@ def test_callback_rejects_bad_state_with_frontend_redirect(monkeypatch):
     )
     assert response.status_code == 302
     assert response.headers["location"] == "http://127.0.0.1:5173/?auth_error=1"
+
+
+def test_callback_spotify_error_query_redirects(monkeypatch):
+    monkeypatch.setattr(
+        "app.spotify.routes.settings.frontend_url",
+        "http://127.0.0.1:5173",
+    )
+    response = client.get(
+        "/callback?error=access_denied",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://127.0.0.1:5173/?auth_error=1"
+
+
+@respx.mock
+def test_callback_exchange_failure_redirects(monkeypatch):
+    monkeypatch.setattr(
+        "app.spotify.oauth.settings.spotify_client_id",
+        "test-client-id",
+    )
+    monkeypatch.setattr(
+        "app.spotify.oauth.settings.spotify_client_secret",
+        "test-secret",
+    )
+    monkeypatch.setattr(
+        "app.spotify.oauth.settings.spotify_redirect_uri",
+        "http://127.0.0.1:8000/callback",
+    )
+    monkeypatch.setattr(
+        "app.spotify.routes.settings.frontend_url",
+        "http://127.0.0.1:5173",
+    )
+    state = oauth.create_login_state()
+    respx.post("https://accounts.spotify.com/api/token").mock(
+        return_value=Response(500, json={"error": "server_error"})
+    )
+    response = client.get(
+        f"/callback?code=auth-code&state={state}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://127.0.0.1:5173/?auth_error=1"
+    assert oauth.get_tokens() is None
