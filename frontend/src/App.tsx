@@ -13,6 +13,7 @@ import { ArtistList } from "./components/ArtistList";
 import { DashboardSection } from "./components/DashboardSection";
 import { NowPlaying } from "./components/NowPlaying";
 import { ProfileHeader } from "./components/ProfileHeader";
+import { MoviesSearch } from "./components/MoviesSearch";
 import { RecentTrackList, TopTrackList } from "./components/TrackList";
 import type {
   CurrentlyPlayingResponse,
@@ -173,6 +174,7 @@ export default function App() {
           >
             Log in with Spotify
           </button>
+          <MoviesSearch showTitle />
         </main>
       </div>
     );
@@ -269,6 +271,11 @@ export default function App() {
         >
           {(data) => <ArtistList items={data.items} />}
         </DashboardSection>
+
+        <section className="dashboard-section">
+          <h2 className="section-title">Movies</h2>
+          <MoviesSearch />
+        </section>
       </main>
     </div>
   );

@@ -66,3 +66,23 @@ export type SectionState<T> = {
   data?: T;
   error?: string;
 };
+
+export type MoviesStatus = {
+  configured: boolean;
+  reachable: boolean;
+};
+
+export type MovieItem = {
+  id: number;
+  title: string;
+  year: string | null;
+  overview: string;
+  poster_url: string | null;
+};
+
+export type MovieSearchResponse = {
+  query: string;
+  page: number;
+  total_results: number;
+  items: MovieItem[];
+};

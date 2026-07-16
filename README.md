@@ -9,7 +9,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Fill in Spotify and OpenAI keys in `.env` when needed. Never commit `.env`.
+Fill in Spotify, OpenAI, and TMDB keys in `.env` when needed. Never commit `.env`.
+
+For movie search, create a free TMDB API key at [https://www.themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) and set `TMDB_API_KEY` in `.env`.
 
 Set Spotify Redirect URI to `http://127.0.0.1:8000/callback` (backend callback, not the Vite dev server).
 

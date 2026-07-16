@@ -1,11 +1,28 @@
 import type {
   AuthStatus,
   CurrentlyPlayingResponse,
+  MovieSearchResponse,
+  MoviesStatus,
   RecentlyPlayedResponse,
   SpotifyProfile,
   TopArtistsResponse,
   TopTracksResponse,
 } from "./types";
+
+async function errorMessageFromResponse(
+  res: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") {
+      return body.detail;
+    }
+  } catch {
+    // ignore non-JSON bodies
+  }
+  return fallback;
+}
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   const res = await fetch("/api/auth/spotify/status");
@@ -81,4 +98,47 @@ export async function logoutSpotify(): Promise<AuthStatus> {
 
 export function startSpotifyLogin(): void {
   window.location.assign("/api/auth/spotify/login");
+}
+
+export async function fetchMoviesStatus(): Promise<MoviesStatus> {
+  const res = await fetch("/api/movies/status");
+  if (!res.ok) {
+    throw new Error("Failed to load movies status");
+  }
+  return res.json();
+}
+
+export async function searchMovies(
+  q: string,
+  page = 1,
+): Promise<MovieSearchResponse> {
+  const params = new URLSearchParams({
+    q,
+    page: String(page),
+  });
+  const res = await fetch(`/api/movies/search?${params}`);
+  if (!res.ok) {
+    if (res.status === 503) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "TMDB API key not configured",
+        ),
+      );
+    }
+    if (res.status === 502) {
+      throw new Error(
+        await errorMessageFromResponse(res, "TMDB API request failed"),
+      );
+    }
+    if (res.status === 400) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Enter a search query"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Movie search failed"),
+    );
+  }
+  return res.json();
 }
