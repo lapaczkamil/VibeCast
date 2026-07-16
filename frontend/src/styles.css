@@ -702,6 +702,17 @@ body::before {
   flex: 1;
 }
 
+.listening-drawer .dashboard-section {
+  margin-bottom: 1.25rem;
+}
+
+.listening-drawer .section-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
 @keyframes drawer-fade {
   from { opacity: 0; }
   to { opacity: 1; }
