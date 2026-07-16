@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ SCOPE = (
 
 _tokens: "TokenSet | None" = None
 _pending_state: str | None = None
+_refresh_lock = asyncio.Lock()
 
 
 @dataclass

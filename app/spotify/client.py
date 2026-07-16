@@ -55,15 +55,18 @@ def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
     item = payload.get("item")
     if item is None:
         return CurrentlyPlayingResponse(is_playing=False, track=None)
+    album = item.get("album")
+    if not album or "name" not in album:
+        return CurrentlyPlayingResponse(is_playing=False, track=None)
     return CurrentlyPlayingResponse(
         is_playing=bool(payload.get("is_playing")),
         track=PlayingTrack(
             track_id=item["id"],
             name=item["name"],
             artists=[artist["name"] for artist in item.get("artists", [])],
-            album=item["album"]["name"],
+            album=album["name"],
             spotify_url=item["external_urls"]["spotify"],
-            image_url=_first_image_url(item.get("album", {}).get("images")),
+            image_url=_first_image_url(album.get("images")),
         ),
     )
 

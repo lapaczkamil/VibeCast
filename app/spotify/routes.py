@@ -46,13 +46,24 @@ async def _authed_spotify(
         raise HTTPException(status_code=401, detail="Not authenticated")
     response = await fetch(tokens.access_token)
     if response.status_code == 401 and tokens.refresh_token:
-        try:
-            new_tokens = await oauth.refresh_access_token()
-            oauth.set_tokens(new_tokens)
-            response = await fetch(new_tokens.access_token)
-        except Exception:
-            oauth.clear_tokens()
-            raise HTTPException(status_code=401, detail="Not authenticated") from None
+        stale_access_token = tokens.access_token
+        async with oauth._refresh_lock:
+            current = oauth.get_tokens()
+            if current is None or not current.refresh_token:
+                oauth.clear_tokens()
+                raise HTTPException(status_code=401, detail="Not authenticated")
+            if current.access_token != stale_access_token:
+                response = await fetch(current.access_token)
+            else:
+                try:
+                    new_tokens = await oauth.refresh_access_token()
+                    oauth.set_tokens(new_tokens)
+                    response = await fetch(new_tokens.access_token)
+                except Exception:
+                    oauth.clear_tokens()
+                    raise HTTPException(
+                        status_code=401, detail="Not authenticated"
+                    ) from None
     if response.status_code == 401:
         oauth.clear_tokens()
         raise HTTPException(status_code=401, detail="Not authenticated")

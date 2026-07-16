@@ -1,5 +1,7 @@
+import asyncio
+
 import respx
-from httpx import Response
+from httpx import ASGITransport, AsyncClient, Response
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -100,6 +102,84 @@ def test_currently_playing_maps_track():
             "image_url": "https://i.scdn.co/image/album",
         },
     }
+
+
+@respx.mock
+def test_currently_playing_episode_without_album():
+    oauth.set_tokens(
+        TokenSet(access_token="access-abc", refresh_token="refresh-xyz", expires_at=None)
+    )
+    respx.get("https://api.spotify.com/v1/me/player/currently-playing").mock(
+        return_value=Response(
+            200,
+            json={
+                "is_playing": True,
+                "item": {
+                    "id": "episode1",
+                    "name": "Podcast Episode",
+                    "artists": [{"name": "Host"}],
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/episode/episode1"
+                    },
+                },
+            },
+        )
+    )
+    response = client.get("/spotify/currently-playing")
+    assert response.status_code == 200
+    assert response.json() == {"is_playing": False, "track": None}
+
+
+@respx.mock
+def test_parallel_refresh_single_flight(monkeypatch):
+    monkeypatch.setattr(
+        "app.spotify.oauth.settings.spotify_client_id",
+        "test-client-id",
+    )
+    monkeypatch.setattr(
+        "app.spotify.oauth.settings.spotify_client_secret",
+        "test-secret",
+    )
+    oauth.set_tokens(
+        TokenSet(access_token="old-access", refresh_token="refresh-xyz", expires_at=None)
+    )
+
+    def me_handler(request):
+        auth = request.headers.get("Authorization", "")
+        if auth == "Bearer old-access":
+            return Response(401, json={"error": {"message": "expired"}})
+        return Response(
+            200,
+            json={
+                "id": "user123",
+                "display_name": "Test User",
+                "images": [],
+                "country": "US",
+                "product": "premium",
+            },
+        )
+
+    respx.get("https://api.spotify.com/v1/me").mock(side_effect=me_handler)
+    refresh_route = respx.post("https://accounts.spotify.com/api/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "access_token": "new-access",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            },
+        )
+    )
+
+    async def fetch_parallel():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            return await asyncio.gather(*[ac.get("/spotify/me") for _ in range(5)])
+
+    responses = asyncio.run(fetch_parallel())
+    assert all(response.status_code == 200 for response in responses)
+    assert refresh_route.call_count == 1
+    assert oauth.get_tokens().access_token == "new-access"
 
 
 @respx.mock
