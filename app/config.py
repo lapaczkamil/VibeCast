@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     frontend_url: str = "http://127.0.0.1:5173"
     openai_api_key: str | None = None
     tmdb_api_key: str | None = None
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_model: str = "llama3.2"
+    ollama_embed_model: str = "nomic-embed-text"
+    rag_collection: str = "movies"
+    rag_movie_target: int = 1000
+    rag_chroma_path: str = "data/chroma"
 
 
 @lru_cache

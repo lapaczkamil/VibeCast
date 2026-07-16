@@ -27,6 +27,42 @@ async def fetch_movie_search(api_key: str, query: str, page: int) -> httpx.Respo
         )
 
 
+async def fetch_popular_page(api_key: str, page: int) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
+        return await client.get(
+            f"{TMDB_BASE_URL}/movie/popular",
+            params={"api_key": api_key, "page": page},
+        )
+
+
+async def fetch_genre_list(api_key: str) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
+        return await client.get(
+            f"{TMDB_BASE_URL}/genre/movie/list",
+            params={"api_key": api_key},
+        )
+
+
+def fetch_popular_page_sync(api_key: str, page: int) -> httpx.Response:
+    with httpx.Client(timeout=TMDB_TIMEOUT) as client:
+        return client.get(
+            f"{TMDB_BASE_URL}/movie/popular",
+            params={"api_key": api_key, "page": page},
+        )
+
+
+def fetch_genre_list_sync(api_key: str) -> httpx.Response:
+    with httpx.Client(timeout=TMDB_TIMEOUT) as client:
+        return client.get(
+            f"{TMDB_BASE_URL}/genre/movie/list",
+            params={"api_key": api_key},
+        )
+
+
+def map_genre_ids(genre_ids: list[int], genre_map: dict[int, str]) -> list[str]:
+    return [genre_map[genre_id] for genre_id in genre_ids if genre_id in genre_map]
+
+
 def _map_year(release_date: str | None) -> str | None:
     if release_date and len(release_date) >= 4:
         return release_date[:4]
