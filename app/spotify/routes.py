@@ -10,11 +10,13 @@ from app.spotify.client import (
     fetch_currently_playing,
     fetch_me,
     fetch_recently_played,
+    fetch_search,
     fetch_top_artists,
     fetch_top_tracks,
     map_currently_playing,
     map_me,
     map_recently_played,
+    map_search_tracks,
     map_top_artists,
     map_top_tracks,
 )
@@ -24,6 +26,7 @@ from app.spotify.schemas import (
     SpotifyProfile,
     TopArtistsResponse,
     TopTracksResponse,
+    TrackSearchResponse,
 )
 
 router = APIRouter()
@@ -172,3 +175,15 @@ async def spotify_recently_played(limit: int = Query(default=20)):
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail="Spotify API request failed")
     return RecentlyPlayedResponse(items=map_recently_played(response.json()))
+
+
+@router.get("/spotify/search", response_model=TrackSearchResponse)
+async def spotify_search(q: str = Query(...), limit: int = Query(default=10)):
+    if not q.strip():
+        raise HTTPException(status_code=422, detail="Query must not be blank")
+    response = await _authed_spotify(
+        lambda token: fetch_search(token, q.strip(), limit)
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Spotify API request failed")
+    return TrackSearchResponse(items=map_search_tracks(response.json()))

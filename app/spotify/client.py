@@ -7,6 +7,7 @@ from app.spotify.schemas import (
     SpotifyProfile,
     TopArtistItem,
     TopTrackItem,
+    TrackSearchItem,
 )
 
 RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
@@ -14,6 +15,7 @@ ME_URL = "https://api.spotify.com/v1/me"
 CURRENTLY_PLAYING_URL = "https://api.spotify.com/v1/me/player/currently-playing"
 TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks"
 TOP_ARTISTS_URL = "https://api.spotify.com/v1/me/top/artists"
+SEARCH_URL = "https://api.spotify.com/v1/search"
 
 
 def _first_image_url(images: list[dict] | None) -> str | None:
@@ -145,4 +147,33 @@ async def fetch_top_artists(
             TOP_ARTISTS_URL,
             params={"limit": limit, "time_range": time_range},
             headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+
+def map_search_tracks(payload: dict) -> list[TrackSearchItem]:
+    items: list[TrackSearchItem] = []
+    for track in payload.get("tracks", {}).get("items", []) or []:
+        if not track or not track.get("id"):
+            continue
+        album = track.get("album") or {}
+        items.append(
+            TrackSearchItem(
+                id=track["id"],
+                name=track["name"],
+                artists=[a["name"] for a in track.get("artists", [])],
+                album=album.get("name") or "",
+                spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
+            )
+        )
+    return items
+
+
+async def fetch_search(access_token: str, q: str, limit: int = 10) -> httpx.Response:
+    async with httpx.AsyncClient() as client:
+        return await client.get(
+            SEARCH_URL,
+            params={"q": q, "type": "track", "limit": limit},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0,
         )
