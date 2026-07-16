@@ -1,9 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.rag.ollama_client import ping_ollama_sync
-from app.rag.schemas import RagStatusResponse
+from app.rag.recommend import RecommendationParseError, recommend_for_user
+from app.rag.schemas import RagStatusResponse, RecommendResponse
 from app.rag.store import count_movies
+from app.spotify import oauth
 
 router = APIRouter()
 
@@ -18,3 +20,26 @@ def rag_status() -> RagStatusResponse:
         embed_model=settings.ollama_embed_model,
         chat_model=settings.ollama_chat_model,
     )
+
+
+@router.post("/recommend", response_model=RecommendResponse)
+async def recommend() -> RecommendResponse:
+    if oauth.get_tokens() is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if count_movies() == 0:
+        raise HTTPException(
+            status_code=503,
+            detail="Movie index not built; run ingest",
+        )
+
+    if not ping_ollama_sync():
+        raise HTTPException(status_code=503, detail="Ollama unreachable")
+
+    try:
+        return await recommend_for_user()
+    except RecommendationParseError:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to parse recommendation response",
+        ) from None
