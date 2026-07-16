@@ -117,7 +117,14 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
 
   return (
     <section className="stage" aria-label="Movie recommendations">
-      <div className="stage-wash" aria-hidden="true" />
+      <div
+        className={
+          phase === "ok"
+            ? "stage-wash stage-wash--loaded"
+            : "stage-wash"
+        }
+        aria-hidden="true"
+      />
       <div className="stage-inner">
         <p className="stage-eyebrow">For your vibe</p>
 
@@ -181,16 +188,19 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
               onTouchStart={onTouchStart}
               onTouchEnd={onTouchEnd}
             >
-              <button
-                type="button"
-                className="stage-nav"
-                onClick={goPrev}
-                aria-label="Previous recommendation"
-              >
-                ‹
-              </button>
+              {itemCount > 1 ? (
+                <button
+                  type="button"
+                  className="stage-nav"
+                  onClick={goPrev}
+                  aria-label="Previous recommendation"
+                >
+                  ‹
+                </button>
+              ) : null}
               {activeMovie.poster_url ? (
                 <img
+                  key={activeMovie.tmdb_id}
                   className="stage-poster"
                   src={activeMovie.poster_url}
                   alt=""
@@ -199,23 +209,28 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
                 />
               ) : (
                 <div
+                  key={activeMovie.tmdb_id}
                   className="stage-poster stage-poster--placeholder"
                   aria-hidden="true"
                 >
                   ?
                 </div>
               )}
-              <button
-                type="button"
-                className="stage-nav"
-                onClick={goNext}
-                aria-label="Next recommendation"
-              >
-                ›
-              </button>
+              {itemCount > 1 ? (
+                <button
+                  type="button"
+                  className="stage-nav"
+                  onClick={goNext}
+                  aria-label="Next recommendation"
+                >
+                  ›
+                </button>
+              ) : null}
             </div>
 
-            <h2 className="stage-title">{activeMovie.title}</h2>
+            <h2 key={activeMovie.tmdb_id} className="stage-title">
+              {activeMovie.title}
+            </h2>
             {activeMovie.year ? (
               <p className="stage-year">{activeMovie.year}</p>
             ) : null}

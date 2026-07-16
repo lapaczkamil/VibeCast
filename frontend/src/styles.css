@@ -76,8 +76,16 @@ body::before {
   padding-block: 3rem;
 }
 
-.shell--logged-in {
-  padding-block: 1.5rem 3rem;
+.app--stage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell--stage {
+  flex: 1;
+  width: min(56rem, 100% - 2rem);
+  padding-block: 0 2rem;
 }
 
 .brand {
@@ -446,12 +454,6 @@ body::before {
   animation: brand-fade-in 900ms ease-out 320ms both;
 }
 
-.shell--logged-in .movies-search {
-  max-width: none;
-  margin-top: 0;
-  animation: none;
-}
-
 .movies-hint {
   margin: 0 0 1rem;
   font-size: 0.95rem;
@@ -572,10 +574,6 @@ body::before {
   font-style: italic;
 }
 
-.recommend-section {
-  padding-top: 0.25rem;
-}
-
 .recommend-hint {
   margin: -0.5rem 0 1.25rem;
   font-size: 0.95rem;
@@ -595,43 +593,11 @@ body::before {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.recommend-actions {
-  margin-bottom: 1.25rem;
-}
-
 .recommend-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
-}
-
-.recommend-idle {
-  margin: 0;
-  font-size: 0.92rem;
-  color: var(--ink-muted);
-}
-
-.recommend-mood {
-  margin: 0 0 1rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  background: rgba(61, 184, 169, 0.06);
-  font-size: 0.95rem;
-  color: var(--ink);
-  line-height: 1.45;
-}
-
-.recommend-reason {
-  margin: 0.4rem 0 0;
-  font-size: 0.92rem;
-  color: var(--ink-muted);
-  line-height: 1.45;
-}
-
-.recommend-item {
-  border-color: rgba(61, 184, 169, 0.15);
 }
 
 .drawer-root {
@@ -790,8 +756,13 @@ body::before {
     var(--accent-glow),
     transparent 70%
   );
-  opacity: 0.55;
+  opacity: 0.45;
   z-index: 0;
+  transition: opacity 500ms ease;
+}
+
+.stage-wash--loaded {
+  opacity: 0.7;
 }
 
 .stage-inner {
@@ -844,6 +815,7 @@ body::before {
   border: 1px solid var(--border);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   background: rgba(255, 255, 255, 0.04);
+  animation: brand-fade-in 450ms ease-out both;
 }
 
 .stage-poster--placeholder,
@@ -868,6 +840,7 @@ body::before {
   font-family: var(--font-display);
   font-size: clamp(1.35rem, 4vw, 1.75rem);
   font-weight: 600;
+  animation: brand-fade-in 450ms ease-out 60ms both;
 }
 
 .stage-year,
