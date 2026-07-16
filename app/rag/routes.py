@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.config import settings
 from app.rag.ollama_client import ping_ollama_sync
 from app.rag.recommend import RecommendationParseError, recommend_for_user
-from app.rag.schemas import RagStatusResponse, RecommendResponse
+from app.rag.schemas import RagStatusResponse, RecommendRequest, RecommendResponse
 from app.rag.store import count_movies
 from app.spotify import oauth
 
@@ -23,7 +23,7 @@ def rag_status() -> RagStatusResponse:
 
 
 @router.post("/recommend", response_model=RecommendResponse)
-async def recommend() -> RecommendResponse:
+async def recommend(body: RecommendRequest = RecommendRequest()) -> RecommendResponse:
     if oauth.get_tokens() is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -37,7 +37,7 @@ async def recommend() -> RecommendResponse:
         raise HTTPException(status_code=503, detail="Ollama unreachable")
 
     try:
-        return await recommend_for_user()
+        return await recommend_for_user(body)
     except RecommendationParseError:
         raise HTTPException(
             status_code=502,

@@ -7,7 +7,12 @@ from fastapi import HTTPException
 
 from app.movies.client import _map_poster_url
 from app.rag.ollama_client import chat_json, embed_texts
-from app.rag.schemas import RecommendMovieItem, RecommendResponse
+from app.rag.schemas import (
+    RecommendMovieItem,
+    RecommendRequest,
+    RecommendResponse,
+    RecommendTrackSeed,
+)
 from app.rag.store import query_movies
 from app.spotify.client import (
     fetch_currently_playing,
@@ -25,6 +30,7 @@ RAG_TOP_K = 8
 RECENT_LIMIT = 10
 TOP_TRACKS_LIMIT = 5
 TOP_ARTISTS_LIMIT = 5
+MAX_SEEDS = 5
 
 
 class RecommendationParseError(Exception):
@@ -91,6 +97,31 @@ Pick 3 to 5 movies from the candidates above that best match the music mood.
 Return JSON only with this shape:
 {{"mood_summary": "short string", "items": [{{"tmdb_id": number, "title": "string", "reason": "string"}}]}}
 Each item must use a tmdb_id from the candidate list. Do not invent movies."""
+
+
+async def _now_playing_line_only() -> str | None:
+    cp_response = await _authed_spotify(fetch_currently_playing)
+    if cp_response.status_code == 200 and cp_response.content:
+        cp = map_currently_playing(cp_response.json())
+        if cp.track is not None:
+            return "Now: " + _track_line(cp.track.name, cp.track.artists)
+    return None
+
+
+def _normalize_seeds(tracks: list[RecommendTrackSeed]) -> list[RecommendTrackSeed]:
+    seen: set[str] = set()
+    out: list[RecommendTrackSeed] = []
+    for t in tracks:
+        if t.id in seen:
+            continue
+        seen.add(t.id)
+        out.append(t)
+    return out
+
+
+def _build_mood_from_seeds(seeds: list[RecommendTrackSeed]) -> str:
+    lines = [_track_line(t.name, t.artists) for t in seeds]
+    return "Selected tracks: " + ", ".join(lines)
 
 
 async def _gather_spotify_lines() -> tuple[str | None, list[str], list[str], list[str]]:
@@ -164,22 +195,24 @@ def _map_validated_items(
     return validated
 
 
-async def recommend_for_user() -> RecommendResponse:
-    (
-        now_playing_line,
-        recent_lines,
-        top_track_lines,
-        top_artist_lines,
-    ) = await _gather_spotify_lines()
+async def recommend_for_user(
+    request: RecommendRequest | None = None,
+) -> RecommendResponse:
+    request = request or RecommendRequest()
+    if len(request.tracks) > MAX_SEEDS:
+        raise HTTPException(status_code=422, detail="At most 5 tracks allowed")
 
-    mood_query = build_mood_query(
-        now_playing_line=now_playing_line,
-        recent_lines=recent_lines,
-        top_track_lines=top_track_lines,
-        top_artist_lines=top_artist_lines,
-    )
-    if not mood_query.strip():
-        mood_query = "General listening mood"
+    seeds = _normalize_seeds(request.tracks)
+    if seeds:
+        mood_query = _build_mood_from_seeds(seeds)
+    else:
+        now_playing_line = await _now_playing_line_only()
+        if not now_playing_line:
+            raise HTTPException(
+                status_code=400,
+                detail="Select at least one track or start playing music",
+            )
+        mood_query = now_playing_line
 
     embedding = embed_texts([mood_query])[0]
     documents, metadatas = query_movies(embedding, RAG_TOP_K)

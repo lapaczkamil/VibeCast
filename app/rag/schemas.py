@@ -20,3 +20,13 @@ class RecommendMovieItem(BaseModel):
 class RecommendResponse(BaseModel):
     mood_summary: str
     items: list[RecommendMovieItem]
+
+
+class RecommendTrackSeed(BaseModel):
+    id: str
+    name: str
+    artists: list[str]
+
+
+class RecommendRequest(BaseModel):
+    tracks: list[RecommendTrackSeed] = []

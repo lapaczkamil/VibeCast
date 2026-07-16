@@ -82,7 +82,6 @@ def test_recommend_ollama_unreachable(monkeypatch):
 @respx.mock
 def test_recommend_happy_path(monkeypatch):
     oauth.set_tokens(TOKENS)
-    _mock_spotify_context()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -116,7 +115,14 @@ def test_recommend_happy_path(monkeypatch):
         ),
     )
 
-    response = client.post("/recommend")
+    response = client.post(
+        "/recommend",
+        json={
+            "tracks": [
+                {"id": "s1", "name": "Seed Song", "artists": ["Seed Artist"]}
+            ]
+        },
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["mood_summary"] == "Dark, intense energy"
@@ -135,7 +141,6 @@ def test_recommend_happy_path(monkeypatch):
 @respx.mock
 def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
     oauth.set_tokens(TOKENS)
-    _mock_spotify_context()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -158,7 +163,14 @@ def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
         ),
     )
 
-    response = client.post("/recommend")
+    response = client.post(
+        "/recommend",
+        json={
+            "tracks": [
+                {"id": "s1", "name": "Seed Song", "artists": ["Seed Artist"]}
+            ]
+        },
+    )
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
     assert response.json()["items"][0]["tmdb_id"] == 550
@@ -167,7 +179,6 @@ def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
 @respx.mock
 def test_recommend_parse_failure_502(monkeypatch):
     oauth.set_tokens(TOKENS)
-    _mock_spotify_context()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -179,8 +190,81 @@ def test_recommend_parse_failure_502(monkeypatch):
     )
     monkeypatch.setattr("app.rag.recommend.chat_json", lambda prompt: "not json")
 
-    response = client.post("/recommend")
+    response = client.post(
+        "/recommend",
+        json={
+            "tracks": [
+                {"id": "s1", "name": "Seed Song", "artists": ["Seed Artist"]}
+            ]
+        },
+    )
     assert response.status_code == 502
+
+
+def test_recommend_with_seed_tracks_skips_listening_history(monkeypatch):
+    oauth.set_tokens(TOKENS)
+    respx.get("https://api.spotify.com/v1/me/player/currently-playing").mock(
+        return_value=Response(204)
+    )
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+    captured: list[str] = []
+
+    def fake_embed(texts):
+        captured.extend(texts)
+        return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr(
+        "app.rag.recommend.query_movies",
+        lambda emb, k: (["doc"], CANDIDATE_METADATAS[:1]),
+    )
+    monkeypatch.setattr(
+        "app.rag.recommend.chat_json",
+        lambda prompt: json.dumps(
+            {
+                "mood_summary": "Seeded",
+                "items": [{"tmdb_id": 550, "title": "Fight Club", "reason": "x"}],
+            }
+        ),
+    )
+
+    with respx.mock:
+        response = client.post(
+            "/recommend",
+            json={
+                "tracks": [
+                    {"id": "s1", "name": "Seed Song", "artists": ["Seed Artist"]}
+                ]
+            },
+        )
+    assert response.status_code == 200
+    assert "Seed Song" in captured[0]
+    assert "Recent1" not in captured[0]
+
+
+def test_recommend_empty_tracks_no_now_playing_400(monkeypatch):
+    oauth.set_tokens(TOKENS)
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+    with respx.mock:
+        respx.get("https://api.spotify.com/v1/me/player/currently-playing").mock(
+            return_value=Response(204)
+        )
+        response = client.post("/recommend", json={"tracks": []})
+    assert response.status_code == 400
+    assert "select" in response.json()["detail"].lower()
+
+
+def test_recommend_more_than_five_seeds_422(monkeypatch):
+    oauth.set_tokens(TOKENS)
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+    tracks = [
+        {"id": f"t{i}", "name": f"S{i}", "artists": ["A"]} for i in range(6)
+    ]
+    response = client.post("/recommend", json={"tracks": tracks})
+    assert response.status_code == 422
 
 
 def _mock_spotify_context() -> None:
