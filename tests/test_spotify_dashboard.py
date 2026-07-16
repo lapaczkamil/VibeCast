@@ -105,6 +105,36 @@ def test_currently_playing_maps_track():
 
 
 @respx.mock
+def test_currently_playing_paused_hides_track():
+    oauth.set_tokens(
+        TokenSet(access_token="access-abc", refresh_token="refresh-xyz", expires_at=None)
+    )
+    respx.get("https://api.spotify.com/v1/me/player/currently-playing").mock(
+        return_value=Response(
+            200,
+            json={
+                "is_playing": False,
+                "item": {
+                    "id": "track1",
+                    "name": "Paused Song",
+                    "artists": [{"name": "Artist A"}],
+                    "album": {
+                        "name": "Album",
+                        "images": [{"url": "https://i.scdn.co/image/album"}],
+                    },
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/track/track1"
+                    },
+                },
+            },
+        )
+    )
+    response = client.get("/spotify/currently-playing")
+    assert response.status_code == 200
+    assert response.json() == {"is_playing": False, "track": None}
+
+
+@respx.mock
 def test_currently_playing_episode_without_album():
     oauth.set_tokens(
         TokenSet(access_token="access-abc", refresh_token="refresh-xyz", expires_at=None)
@@ -196,7 +226,10 @@ def test_top_tracks_maps_items():
                         "id": "track1",
                         "name": "Top Song",
                         "artists": [{"name": "Artist"}],
-                        "album": {"name": "Album"},
+                        "album": {
+                            "name": "Album",
+                            "images": [{"url": "https://i.scdn.co/image/top"}],
+                        },
                         "external_urls": {
                             "spotify": "https://open.spotify.com/track/track1"
                         },
@@ -215,6 +248,7 @@ def test_top_tracks_maps_items():
                 "artists": ["Artist"],
                 "album": "Album",
                 "spotify_url": "https://open.spotify.com/track/track1",
+                "image_url": "https://i.scdn.co/image/top",
             }
         ]
     }

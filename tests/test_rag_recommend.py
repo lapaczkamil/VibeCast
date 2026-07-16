@@ -132,7 +132,7 @@ def test_recommend_happy_path(monkeypatch):
     assert body["items"][0]["year"] == "1999"
     assert (
         body["items"][0]["poster_url"]
-        == "https://image.tmdb.org/t/p/w185/poster.jpg"
+        == "https://image.tmdb.org/t/p/w780/poster.jpg"
     )
     assert body["items"][0]["reason"] == "Matches your edgy top tracks"
     assert body["items"][1]["poster_url"] is None

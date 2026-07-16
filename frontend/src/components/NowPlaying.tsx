@@ -69,7 +69,6 @@ export function NowPlaying({
         </a>
         <p className="now-playing-meta">
           {track.artists.join(", ")} · {track.album}
-          {!data.is_playing ? " · Paused" : ""}
         </p>
       </div>
     </div>

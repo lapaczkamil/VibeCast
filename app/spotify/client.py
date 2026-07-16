@@ -30,14 +30,16 @@ def map_recently_played(payload: dict) -> list[RecentlyPlayedItem]:
         track = entry.get("track")
         if track is None:
             continue
+        album = track.get("album") or {}
         items.append(
             RecentlyPlayedItem(
                 played_at=entry["played_at"],
                 track_id=track["id"],
                 name=track["name"],
                 artists=[artist["name"] for artist in track.get("artists", [])],
-                album=track["album"]["name"],
+                album=album.get("name") or "",
                 spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
             )
         )
     return items
@@ -54,6 +56,11 @@ def map_me(payload: dict) -> SpotifyProfile:
 
 
 def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
+    is_playing = bool(payload.get("is_playing"))
+    # Paused / stopped: hide the track so Now Playing only shows active playback.
+    if not is_playing:
+        return CurrentlyPlayingResponse(is_playing=False, track=None)
+
     item = payload.get("item")
     if item is None:
         return CurrentlyPlayingResponse(is_playing=False, track=None)
@@ -61,7 +68,7 @@ def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
     if not album or "name" not in album:
         return CurrentlyPlayingResponse(is_playing=False, track=None)
     return CurrentlyPlayingResponse(
-        is_playing=bool(payload.get("is_playing")),
+        is_playing=True,
         track=PlayingTrack(
             track_id=item["id"],
             name=item["name"],
@@ -76,13 +83,15 @@ def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
 def map_top_tracks(payload: dict) -> list[TopTrackItem]:
     items: list[TopTrackItem] = []
     for track in payload.get("items", []):
+        album = track.get("album") or {}
         items.append(
             TopTrackItem(
                 track_id=track["id"],
                 name=track["name"],
                 artists=[artist["name"] for artist in track.get("artists", [])],
-                album=track["album"]["name"],
+                album=album.get("name") or "",
                 spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
             )
         )
     return items

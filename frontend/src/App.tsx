@@ -4,7 +4,6 @@ import {
   fetchCurrentlyPlaying,
   fetchMe,
   fetchRecentlyPlayed,
-  fetchTopArtists,
   fetchTopTracks,
   logoutSpotify,
   startSpotifyLogin,
@@ -19,10 +18,18 @@ import type {
   SectionState,
   SeedTrack,
   SpotifyProfile,
-  TopArtistsResponse,
   TopTracksResponse,
 } from "./types";
 import { toggleSeed } from "./lib/seeds";
+import {
+  applyTheme,
+  getStoredTheme,
+  toggleTheme,
+  type Theme,
+} from "./lib/theme";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { AudioMeters } from "./components/AudioMeters";
+import { NowPlayingDock } from "./components/NowPlayingDock";
 
 function authErrorFromSearch(search: string): boolean {
   return new URLSearchParams(search).get("auth_error") === "1";
@@ -59,24 +66,29 @@ export default function App() {
     useState<SectionState<RecentlyPlayedResponse>>(loadingSection);
   const [topTracks, setTopTracks] =
     useState<SectionState<TopTracksResponse>>(loadingSection);
-  const [topArtists, setTopArtists] =
-    useState<SectionState<TopArtistsResponse>>(loadingSection);
   const [seeds, setSeeds] = useState<SeedTrack[]>([]);
   const [limitHint, setLimitHint] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((current) => toggleTheme(current));
+  }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const loadDashboard = useCallback(async () => {
     setMe(loadingSection());
     setCurrentlyPlaying(loadingSection());
     setRecentlyPlayed(loadingSection());
     setTopTracks(loadingSection());
-    setTopArtists(loadingSection());
 
     const results = await Promise.allSettled([
       fetchMe(),
       fetchCurrentlyPlaying(),
       fetchRecentlyPlayed(10),
       fetchTopTracks(10, "medium_term"),
-      fetchTopArtists(10, "medium_term"),
     ]);
 
     setMe(settledSection(results[0], "Failed to load profile"));
@@ -87,7 +99,6 @@ export default function App() {
       settledSection(results[2], "Failed to load recently played"),
     );
     setTopTracks(settledSection(results[3], "Failed to load top tracks"));
-    setTopArtists(settledSection(results[4], "Failed to load top artists"));
   }, []);
 
   const loadAuth = useCallback(async () => {
@@ -122,7 +133,6 @@ export default function App() {
       setCurrentlyPlaying(loadingSection());
       setRecentlyPlayed(loadingSection());
       setTopTracks(loadingSection());
-      setTopArtists(loadingSection());
       setSeeds([]);
       setLimitHint(null);
     }
@@ -172,6 +182,20 @@ export default function App() {
     }
   }, []);
 
+  const refreshListeningLists = useCallback(async () => {
+    const results = await Promise.allSettled([
+      fetchRecentlyPlayed(10),
+      fetchTopTracks(10, "medium_term"),
+    ]);
+
+    if (results[0].status === "fulfilled") {
+      setRecentlyPlayed({ status: "ok", data: results[0].value });
+    }
+    if (results[1].status === "fulfilled") {
+      setTopTracks({ status: "ok", data: results[1].value });
+    }
+  }, []);
+
   const retryCurrentlyPlaying = useCallback(() => {
     void refreshCurrentlyPlaying();
   }, [refreshCurrentlyPlaying]);
@@ -179,29 +203,45 @@ export default function App() {
   useEffect(() => {
     if (!authenticated) return;
 
-    const POLL_MS = 15_000;
+    const NOW_PLAYING_MS = 5_000;
+    const LISTENING_MS = 45_000;
 
-    const tick = () => {
+    const tickNowPlaying = () => {
       if (document.visibilityState === "hidden") return;
       void refreshCurrentlyPlaying({ silent: true });
     };
 
-    const id = window.setInterval(tick, POLL_MS);
+    const tickListening = () => {
+      if (document.visibilityState === "hidden") return;
+      void refreshListeningLists();
+    };
+
+    const nowPlayingId = window.setInterval(tickNowPlaying, NOW_PLAYING_MS);
+    const listeningId = window.setInterval(tickListening, LISTENING_MS);
+
     const onVisibility = () => {
-      if (document.visibilityState === "visible") tick();
+      if (document.visibilityState !== "visible") return;
+      tickNowPlaying();
+      tickListening();
     };
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      window.clearInterval(id);
+      window.clearInterval(nowPlayingId);
+      window.clearInterval(listeningId);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [authenticated, refreshCurrentlyPlaying]);
+  }, [authenticated, refreshCurrentlyPlaying, refreshListeningLists]);
 
   useEffect(() => {
     if (drawer !== "listening" || !authenticated) return;
-    void refreshCurrentlyPlaying({ silent: true });
-  }, [drawer, authenticated, refreshCurrentlyPlaying]);
+    // Defer fetch until after the open animation so the first paint stays smooth.
+    const id = window.setTimeout(() => {
+      void refreshCurrentlyPlaying({ silent: true });
+      void refreshListeningLists();
+    }, 280);
+    return () => window.clearTimeout(id);
+  }, [drawer, authenticated, refreshCurrentlyPlaying, refreshListeningLists]);
 
   const retryRecentlyPlayed = useCallback(() => {
     setRecentlyPlayed(loadingSection());
@@ -231,19 +271,6 @@ export default function App() {
       );
   }, []);
 
-  const retryTopArtists = useCallback(() => {
-    setTopArtists(loadingSection());
-    void fetchTopArtists(10, "medium_term")
-      .then((data) => setTopArtists({ status: "ok", data }))
-      .catch((err: unknown) =>
-        setTopArtists({
-          status: "error",
-          error:
-            err instanceof Error ? err.message : "Failed to load top artists",
-        }),
-      );
-  }, []);
-
   useEffect(() => {
     if (authError) {
       const url = new URL(window.location.href);
@@ -256,8 +283,12 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="app">
+        <AudioMeters active />
+        <div className="theme-toggle-float">
+          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+        </div>
         <main className="shell shell--center">
-          <p className="status-message">Tuning in…</p>
+          <p className="status-message">Loading…</p>
         </main>
       </div>
     );
@@ -266,6 +297,10 @@ export default function App() {
   if (authFetchError) {
     return (
       <div className="app">
+        <AudioMeters />
+        <div className="theme-toggle-float">
+          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+        </div>
         <main className="shell shell--center">
           <p className="status-message status-message--error">{authFetchError}</p>
           <button type="button" className="cta cta--ghost" onClick={loadAuth}>
@@ -279,10 +314,15 @@ export default function App() {
   if (!authenticated) {
     return (
       <div className="app">
+        <AudioMeters active />
+        <div className="theme-toggle-float">
+          <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+        </div>
         <main className="shell shell--landing">
           <h1 className="brand brand--hero">VibeCast</h1>
-          <p className="subtitle">
-            Movies matched to the mood of your music.
+          <p className="subtitle">Films tuned to your signal.</p>
+          <p className="landing-lede">
+            Plug into Spotify. Read the mood in your tracks. Match it to cinema.
           </p>
           {authError && (
             <p className="auth-error" role="alert">
@@ -304,31 +344,41 @@ export default function App() {
   const hasNowPlaying =
     currentlyPlaying.status === "ok" &&
     currentlyPlaying.data?.track != null;
+  const isPlaying =
+    currentlyPlaying.status === "ok" &&
+    currentlyPlaying.data?.is_playing === true;
 
   return (
-    <div className="app app--stage">
+    <div className={drawer ? "app app--stage app--drawer-open" : "app app--stage"}>
+      <AudioMeters active={isPlaying} />
       <AppChrome
         profile={me}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
         onOpenListening={() => setDrawer("listening")}
         onOpenSearch={() => setDrawer("search")}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
       <main className="shell shell--stage">
         <RecommendStage
           drawerOpen={drawer !== null}
           seeds={seeds}
           hasNowPlaying={hasNowPlaying}
+          isPlaying={isPlaying}
           onRemoveSeed={handleRemoveSeed}
         />
       </main>
+      <NowPlayingDock
+        currentlyPlaying={currentlyPlaying}
+        onOpenListening={() => setDrawer("listening")}
+      />
       <ListeningDrawer
         open={drawer === "listening"}
         onClose={closeDrawer}
         currentlyPlaying={currentlyPlaying}
         recentlyPlayed={recentlyPlayed}
         topTracks={topTracks}
-        topArtists={topArtists}
         seeds={seeds}
         onToggleSeed={handleToggleSeed}
         onClearSeeds={handleClearSeeds}
@@ -336,7 +386,6 @@ export default function App() {
         onRetryCurrentlyPlaying={retryCurrentlyPlaying}
         onRetryRecentlyPlayed={retryRecentlyPlayed}
         onRetryTopTracks={retryTopTracks}
-        onRetryTopArtists={retryTopArtists}
       />
       <SearchDrawer open={drawer === "search"} onClose={closeDrawer} />
     </div>

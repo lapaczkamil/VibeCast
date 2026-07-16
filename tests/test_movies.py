@@ -91,7 +91,7 @@ def test_movies_search_maps_results(monkeypatch):
     assert body["query"] == "inception"
     assert body["items"][0]["id"] == 27205
     assert body["items"][0]["year"] == "2010"
-    assert body["items"][0]["poster_url"] == "https://image.tmdb.org/t/p/w185/poster.jpg"
+    assert body["items"][0]["poster_url"] == "https://image.tmdb.org/t/p/w342/poster.jpg"
     assert "test-key" not in str(body)
 
 
