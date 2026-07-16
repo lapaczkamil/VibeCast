@@ -1,94 +1,123 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchAuthStatus,
+  fetchCurrentlyPlaying,
+  fetchMe,
   fetchRecentlyPlayed,
+  fetchTopArtists,
+  fetchTopTracks,
+  logoutSpotify,
   startSpotifyLogin,
 } from "./api";
-import type { RecentlyPlayedItem } from "./types";
-
-function formatPlayedAt(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { ArtistList } from "./components/ArtistList";
+import { DashboardSection } from "./components/DashboardSection";
+import { NowPlaying } from "./components/NowPlaying";
+import { ProfileHeader } from "./components/ProfileHeader";
+import { RecentTrackList, TopTrackList } from "./components/TrackList";
+import type {
+  CurrentlyPlayingResponse,
+  RecentlyPlayedResponse,
+  SectionState,
+  SpotifyProfile,
+  TopArtistsResponse,
+  TopTracksResponse,
+} from "./types";
 
 function authErrorFromSearch(search: string): boolean {
   return new URLSearchParams(search).get("auth_error") === "1";
 }
 
-function TrackList({ items }: { items: RecentlyPlayedItem[] }) {
-  if (items.length === 0) {
-    return (
-      <p className="empty-state">
-        No recent tracks yet. Play something on Spotify and check back.
-      </p>
-    );
+function settledSection<T>(
+  result: PromiseSettledResult<T>,
+  fallbackError: string,
+): SectionState<T> {
+  if (result.status === "fulfilled") {
+    return { status: "ok", data: result.value };
   }
-
-  return (
-    <ol className="track-list">
-      {items.map((track, index) => (
-        <li
-          key={`${track.track_id}-${track.played_at}`}
-          className="track-item"
-          style={{ animationDelay: `${index * 45}ms` }}
-        >
-          <div className="track-main">
-            <a
-              href={track.spotify_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="track-title"
-            >
-              {track.name}
-            </a>
-            <p className="track-meta">
-              {track.artists.join(", ")} · {track.album}
-            </p>
-          </div>
-          <time className="track-time" dateTime={track.played_at}>
-            {formatPlayedAt(track.played_at)}
-          </time>
-        </li>
-      ))}
-    </ol>
-  );
+  const message =
+    result.reason instanceof Error ? result.reason.message : fallbackError;
+  return { status: "error", error: message };
 }
+
+const loadingSection = <T,>(): SectionState<T> => ({ status: "loading" });
 
 export default function App() {
   const [authError] = useState(() =>
     authErrorFromSearch(window.location.search),
   );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [tracks, setTracks] = useState<RecentlyPlayedItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authFetchError, setAuthFetchError] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const [me, setMe] = useState<SectionState<SpotifyProfile>>(loadingSection);
+  const [currentlyPlaying, setCurrentlyPlaying] =
+    useState<SectionState<CurrentlyPlayingResponse>>(loadingSection);
+  const [recentlyPlayed, setRecentlyPlayed] =
+    useState<SectionState<RecentlyPlayedResponse>>(loadingSection);
+  const [topTracks, setTopTracks] =
+    useState<SectionState<TopTracksResponse>>(loadingSection);
+  const [topArtists, setTopArtists] =
+    useState<SectionState<TopArtistsResponse>>(loadingSection);
+
+  const loadDashboard = useCallback(async () => {
+    setMe(loadingSection());
+    setCurrentlyPlaying(loadingSection());
+    setRecentlyPlayed(loadingSection());
+    setTopTracks(loadingSection());
+    setTopArtists(loadingSection());
+
+    const results = await Promise.allSettled([
+      fetchMe(),
+      fetchCurrentlyPlaying(),
+      fetchRecentlyPlayed(10),
+      fetchTopTracks(10, "medium_term"),
+      fetchTopArtists(10, "medium_term"),
+    ]);
+
+    setMe(settledSection(results[0], "Failed to load profile"));
+    setCurrentlyPlaying(
+      settledSection(results[1], "Failed to load now playing"),
+    );
+    setRecentlyPlayed(
+      settledSection(results[2], "Failed to load recently played"),
+    );
+    setTopTracks(settledSection(results[3], "Failed to load top tracks"));
+    setTopArtists(settledSection(results[4], "Failed to load top artists"));
+  }, []);
+
+  const loadAuth = useCallback(async () => {
+    setAuthLoading(true);
+    setAuthFetchError(null);
 
     try {
       const status = await fetchAuthStatus();
       setAuthenticated(status.authenticated);
-
       if (status.authenticated) {
-        const data = await fetchRecentlyPlayed();
-        setTracks(data.items);
-      } else {
-        setTracks([]);
+        void loadDashboard();
       }
     } catch {
-      setError("Could not reach VibeCast. Is the backend running?");
+      setAuthFetchError("Could not reach VibeCast. Is the backend running?");
       setAuthenticated(null);
-      setTracks([]);
     } finally {
-      setLoading(false);
+      setAuthLoading(false);
+    }
+  }, [loadDashboard]);
+
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      await logoutSpotify();
+    } catch {
+      // Still return to logged-out UI if the session was cleared server-side.
+    } finally {
+      setLoggingOut(false);
+      setAuthenticated(false);
+      setMe(loadingSection());
+      setCurrentlyPlaying(loadingSection());
+      setRecentlyPlayed(loadingSection());
+      setTopTracks(loadingSection());
+      setTopArtists(loadingSection());
     }
   }, []);
 
@@ -98,10 +127,10 @@ export default function App() {
       url.searchParams.delete("auth_error");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
-    void load();
-  }, [authError, load]);
+    void loadAuth();
+  }, [authError, loadAuth]);
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="app">
         <main className="shell shell--center">
@@ -111,12 +140,12 @@ export default function App() {
     );
   }
 
-  if (error) {
+  if (authFetchError) {
     return (
       <div className="app">
         <main className="shell shell--center">
-          <p className="status-message status-message--error">{error}</p>
-          <button type="button" className="cta cta--ghost" onClick={load}>
+          <p className="status-message status-message--error">{authFetchError}</p>
+          <button type="button" className="cta cta--ghost" onClick={loadAuth}>
             Try again
           </button>
         </main>
@@ -151,13 +180,95 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <h1 className="brand brand--header">VibeCast</h1>
-        <p className="connected">Connected to Spotify</p>
-      </header>
+      <ProfileHeader
+        profile={me}
+        loggingOut={loggingOut}
+        onLogout={() => void handleLogout()}
+      />
       <main className="shell shell--logged-in">
-        <h2 className="section-title">Recently played</h2>
-        <TrackList items={tracks} />
+        <DashboardSection
+          title="Now playing"
+          state={currentlyPlaying}
+          onRetry={() => {
+            setCurrentlyPlaying(loadingSection());
+            void fetchCurrentlyPlaying()
+              .then((data) => setCurrentlyPlaying({ status: "ok", data }))
+              .catch((err: unknown) =>
+                setCurrentlyPlaying({
+                  status: "error",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to load now playing",
+                }),
+              );
+          }}
+        >
+          {(data) => <NowPlaying data={data} />}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Recently played"
+          state={recentlyPlayed}
+          onRetry={() => {
+            setRecentlyPlayed(loadingSection());
+            void fetchRecentlyPlayed(10)
+              .then((data) => setRecentlyPlayed({ status: "ok", data }))
+              .catch((err: unknown) =>
+                setRecentlyPlayed({
+                  status: "error",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to load recently played",
+                }),
+              );
+          }}
+        >
+          {(data) => <RecentTrackList items={data.items} />}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Top tracks"
+          state={topTracks}
+          onRetry={() => {
+            setTopTracks(loadingSection());
+            void fetchTopTracks(10, "medium_term")
+              .then((data) => setTopTracks({ status: "ok", data }))
+              .catch((err: unknown) =>
+                setTopTracks({
+                  status: "error",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to load top tracks",
+                }),
+              );
+          }}
+        >
+          {(data) => <TopTrackList items={data.items} />}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Top artists"
+          state={topArtists}
+          onRetry={() => {
+            setTopArtists(loadingSection());
+            void fetchTopArtists(10, "medium_term")
+              .then((data) => setTopArtists({ status: "ok", data }))
+              .catch((err: unknown) =>
+                setTopArtists({
+                  status: "error",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to load top artists",
+                }),
+              );
+          }}
+        >
+          {(data) => <ArtistList items={data.items} />}
+        </DashboardSection>
       </main>
     </div>
   );
