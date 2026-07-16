@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchRagStatus, requestRecommendations } from "../api";
 import { nextIndex, prevIndex } from "../lib/carouselIndex";
-import type { RagStatus, RecommendResponse } from "../types";
+import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
 
 type RecommendPhase = "idle" | "loading" | "empty" | "ok" | "error";
 
 type RecommendStageProps = {
   drawerOpen: boolean;
+  seeds: SeedTrack[];
+  hasNowPlaying: boolean;
+  onRemoveSeed: (id: string) => void;
 };
 
 const SWIPE_THRESHOLD_PX = 50;
 
-export function RecommendStage({ drawerOpen }: RecommendStageProps) {
+export function RecommendStage({
+  drawerOpen,
+  seeds,
+  hasNowPlaying,
+  onRemoveSeed,
+}: RecommendStageProps) {
   const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [phase, setPhase] = useState<RecommendPhase>("idle");
@@ -37,7 +45,7 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
     setResults(null);
 
     try {
-      const data = await requestRecommendations();
+      const data = await requestRecommendations(seeds);
       setResults(data);
       setActiveIndex(0);
       setPhase(data.items.length === 0 ? "empty" : "ok");
@@ -47,11 +55,13 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
       setError(message);
       setPhase("error");
     }
-  }, []);
+  }, [seeds]);
 
   const indexReady = ragStatus?.index_ready ?? false;
   const ollamaReady = ragStatus?.ollama_reachable ?? false;
-  const canRecommend = indexReady && ollamaReady;
+  const ragReady = indexReady && ollamaReady;
+  const hasSeeds = seeds.length > 0;
+  const canRun = ragReady && (hasSeeds || hasNowPlaying);
 
   const items = results?.items ?? [];
   const itemCount = items.length;
@@ -148,6 +158,37 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
             <code className="recommend-code">{ragStatus.chat_model}</code> and{" "}
             <code className="recommend-code">{ragStatus.embed_model}</code>.
           </p>
+        ) : null}
+
+        {ragReady && !hasSeeds && !hasNowPlaying ? (
+          <p className="recommend-hint" role="status">
+            Select up to 5 seed tracks in Listening, or play something on
+            Spotify, to get recommendations.
+          </p>
+        ) : null}
+
+        {seeds.length > 0 ? (
+          <div className="seed-chips" aria-label="Selected seed tracks">
+            {seeds.map((track) => (
+              <span key={track.id} className="seed-chip">
+                <span className="seed-chip-label">
+                  {track.name}
+                  <span className="seed-chip-artists">
+                    {" "}
+                    · {track.artists.join(", ")}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="seed-chip-remove"
+                  aria-label={`Remove ${track.name} from seeds`}
+                  onClick={() => onRemoveSeed(track.id)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         ) : null}
 
         {phase === "idle" ? (
@@ -268,7 +309,7 @@ export function RecommendStage({ drawerOpen }: RecommendStageProps) {
         <button
           type="button"
           className="cta cta--primary recommend-button"
-          disabled={phase === "loading" || !canRecommend}
+          disabled={phase === "loading" || !canRun}
           onClick={() => void runRecommend()}
         >
           {primaryLabel}

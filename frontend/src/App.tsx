@@ -17,10 +17,12 @@ import type {
   CurrentlyPlayingResponse,
   RecentlyPlayedResponse,
   SectionState,
+  SeedTrack,
   SpotifyProfile,
   TopArtistsResponse,
   TopTracksResponse,
 } from "./types";
+import { toggleSeed } from "./lib/seeds";
 
 function authErrorFromSearch(search: string): boolean {
   return new URLSearchParams(search).get("auth_error") === "1";
@@ -59,6 +61,8 @@ export default function App() {
     useState<SectionState<TopTracksResponse>>(loadingSection);
   const [topArtists, setTopArtists] =
     useState<SectionState<TopArtistsResponse>>(loadingSection);
+  const [seeds, setSeeds] = useState<SeedTrack[]>([]);
+  const [limitHint, setLimitHint] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setMe(loadingSection());
@@ -119,25 +123,85 @@ export default function App() {
       setRecentlyPlayed(loadingSection());
       setTopTracks(loadingSection());
       setTopArtists(loadingSection());
+      setSeeds([]);
+      setLimitHint(null);
     }
+  }, []);
+
+  const handleToggleSeed = useCallback((track: SeedTrack) => {
+    setSeeds((current) => {
+      const { seeds: next, rejected } = toggleSeed(current, track);
+      if (rejected) {
+        setLimitHint("You can select at most 5 seed tracks.");
+      } else {
+        setLimitHint(null);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSeeds = useCallback(() => {
+    setSeeds([]);
+    setLimitHint(null);
+  }, []);
+
+  const handleRemoveSeed = useCallback((id: string) => {
+    setSeeds((current) => current.filter((s) => s.id !== id));
+    setLimitHint(null);
   }, []);
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
 
-  const retryCurrentlyPlaying = useCallback(() => {
-    setCurrentlyPlaying(loadingSection());
-    void fetchCurrentlyPlaying()
-      .then((data) => setCurrentlyPlaying({ status: "ok", data }))
-      .catch((err: unknown) =>
-        setCurrentlyPlaying({
-          status: "error",
-          error:
-            err instanceof Error
-              ? err.message
-              : "Failed to load now playing",
-        }),
-      );
+  const refreshCurrentlyPlaying = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setCurrentlyPlaying(loadingSection());
+    }
+    try {
+      const data = await fetchCurrentlyPlaying();
+      setCurrentlyPlaying({ status: "ok", data });
+    } catch (err: unknown) {
+      if (opts?.silent) {
+        // Keep last good snapshot during background polls.
+        return;
+      }
+      setCurrentlyPlaying({
+        status: "error",
+        error:
+          err instanceof Error ? err.message : "Failed to load now playing",
+      });
+    }
   }, []);
+
+  const retryCurrentlyPlaying = useCallback(() => {
+    void refreshCurrentlyPlaying();
+  }, [refreshCurrentlyPlaying]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const POLL_MS = 15_000;
+
+    const tick = () => {
+      if (document.visibilityState === "hidden") return;
+      void refreshCurrentlyPlaying({ silent: true });
+    };
+
+    const id = window.setInterval(tick, POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [authenticated, refreshCurrentlyPlaying]);
+
+  useEffect(() => {
+    if (drawer !== "listening" || !authenticated) return;
+    void refreshCurrentlyPlaying({ silent: true });
+  }, [drawer, authenticated, refreshCurrentlyPlaying]);
 
   const retryRecentlyPlayed = useCallback(() => {
     setRecentlyPlayed(loadingSection());
@@ -237,6 +301,10 @@ export default function App() {
     );
   }
 
+  const hasNowPlaying =
+    currentlyPlaying.status === "ok" &&
+    currentlyPlaying.data?.track != null;
+
   return (
     <div className="app app--stage">
       <AppChrome
@@ -247,7 +315,12 @@ export default function App() {
         onOpenSearch={() => setDrawer("search")}
       />
       <main className="shell shell--stage">
-        <RecommendStage drawerOpen={drawer !== null} />
+        <RecommendStage
+          drawerOpen={drawer !== null}
+          seeds={seeds}
+          hasNowPlaying={hasNowPlaying}
+          onRemoveSeed={handleRemoveSeed}
+        />
       </main>
       <ListeningDrawer
         open={drawer === "listening"}
@@ -256,6 +329,10 @@ export default function App() {
         recentlyPlayed={recentlyPlayed}
         topTracks={topTracks}
         topArtists={topArtists}
+        seeds={seeds}
+        onToggleSeed={handleToggleSeed}
+        onClearSeeds={handleClearSeeds}
+        limitHint={limitHint}
         onRetryCurrentlyPlaying={retryCurrentlyPlaying}
         onRetryRecentlyPlayed={retryRecentlyPlayed}
         onRetryTopTracks={retryTopTracks}

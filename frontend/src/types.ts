@@ -107,3 +107,24 @@ export type RecommendResponse = {
   mood_summary: string;
   items: RecommendMovieItem[];
 };
+
+export type SeedTrack = {
+  id: string;
+  name: string;
+  artists: string[];
+};
+
+export const MAX_SEEDS = 5;
+
+export type TrackSearchItem = {
+  id: string;
+  name: string;
+  artists: string[];
+  album: string;
+  spotify_url: string;
+  image_url: string | null;
+};
+
+export type TrackSearchResponse = {
+  items: TrackSearchItem[];
+};
