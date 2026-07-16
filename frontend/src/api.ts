@@ -3,7 +3,9 @@ import type {
   CurrentlyPlayingResponse,
   MovieSearchResponse,
   MoviesStatus,
+  RagStatus,
   RecentlyPlayedResponse,
+  RecommendResponse,
   SpotifyProfile,
   TopArtistsResponse,
   TopTracksResponse,
@@ -138,6 +140,45 @@ export async function searchMovies(
     }
     throw new Error(
       await errorMessageFromResponse(res, "Movie search failed"),
+    );
+  }
+  return res.json();
+}
+
+export async function fetchRagStatus(): Promise<RagStatus> {
+  const res = await fetch("/api/rag/status");
+  if (!res.ok) {
+    throw new Error("Failed to load RAG status");
+  }
+  return res.json();
+}
+
+export async function requestRecommendations(): Promise<RecommendResponse> {
+  const res = await fetch("/api/recommend", { method: "POST" });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Not authenticated"),
+      );
+    }
+    if (res.status === 503) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "Recommendations unavailable; check Ollama and movie index",
+        ),
+      );
+    }
+    if (res.status === 502) {
+      throw new Error(
+        await errorMessageFromResponse(
+          res,
+          "Failed to parse recommendation response",
+        ),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Recommendation request failed"),
     );
   }
   return res.json();

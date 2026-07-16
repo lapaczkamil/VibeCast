@@ -571,3 +571,65 @@ body::before {
 .movie-overview--empty {
   font-style: italic;
 }
+
+.recommend-section {
+  padding-top: 0.25rem;
+}
+
+.recommend-hint {
+  margin: -0.5rem 0 1.25rem;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  max-width: 36rem;
+}
+
+.recommend-hint--warn {
+  color: var(--amber);
+}
+
+.recommend-code {
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  font-size: 0.88em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.recommend-actions {
+  margin-bottom: 1.25rem;
+}
+
+.recommend-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.recommend-idle {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+}
+
+.recommend-mood {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: rgba(61, 184, 169, 0.06);
+  font-size: 0.95rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.recommend-reason {
+  margin: 0.4rem 0 0;
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+.recommend-item {
+  border-color: rgba(61, 184, 169, 0.15);
+}

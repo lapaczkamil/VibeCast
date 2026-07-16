@@ -14,6 +14,7 @@ import { DashboardSection } from "./components/DashboardSection";
 import { NowPlaying } from "./components/NowPlaying";
 import { ProfileHeader } from "./components/ProfileHeader";
 import { MoviesSearch } from "./components/MoviesSearch";
+import { RecommendSection } from "./components/RecommendSection";
 import { RecentTrackList, TopTrackList } from "./components/TrackList";
 import type {
   CurrentlyPlayingResponse,
@@ -271,6 +272,8 @@ export default function App() {
         >
           {(data) => <ArtistList items={data.items} />}
         </DashboardSection>
+
+        <RecommendSection />
 
         <section className="dashboard-section">
           <h2 className="section-title">Movies</h2>
