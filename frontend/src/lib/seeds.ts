@@ -1,5 +1,4 @@
 import type { SeedTrack } from "../types";
-import { MAX_SEEDS } from "../types";
 
 export function toggleSeed(
   seeds: SeedTrack[],
@@ -7,12 +6,21 @@ export function toggleSeed(
 ): { seeds: SeedTrack[]; rejected: boolean } {
   const index = seeds.findIndex((s) => s.id === track.id);
   if (index >= 0) {
-    return { seeds: seeds.filter((s) => s.id !== track.id), rejected: false };
+    return { seeds: [], rejected: false };
   }
-  if (seeds.length >= MAX_SEEDS) {
-    return { seeds, rejected: true };
+  // Single-seed mode: selecting another track replaces the current one.
+  return { seeds: [track], rejected: false };
+}
+
+export function addSeed(
+  seeds: SeedTrack[],
+  track: SeedTrack,
+): { seeds: SeedTrack[]; rejected: boolean; already: boolean } {
+  if (seeds.some((s) => s.id === track.id)) {
+    return { seeds, rejected: false, already: true };
   }
-  return { seeds: [...seeds, track], rejected: false };
+  // Replace any existing selection.
+  return { seeds: [track], rejected: false, already: false };
 }
 
 export function isSeedSelected(

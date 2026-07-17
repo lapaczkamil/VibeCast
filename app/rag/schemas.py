@@ -14,6 +14,7 @@ class RecommendMovieItem(BaseModel):
     title: str
     year: str | None = None
     poster_url: str | None = None
+    rating: float | None = None
     reason: str
 
 

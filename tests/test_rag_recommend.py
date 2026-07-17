@@ -20,12 +20,14 @@ CANDIDATE_METADATAS = [
         "title": "Fight Club",
         "year": "1999",
         "poster_path": "/poster.jpg",
+        "rating": 8.4,
     },
     {
         "tmdb_id": 27205,
         "title": "Inception",
         "year": "2010",
         "poster_path": None,
+        "rating": 8.8,
     },
 ]
 
@@ -130,6 +132,7 @@ def test_recommend_happy_path(monkeypatch):
     assert body["items"][0]["tmdb_id"] == 550
     assert body["items"][0]["title"] == "Fight Club"
     assert body["items"][0]["year"] == "1999"
+    assert body["items"][0]["rating"] == 8.4
     assert (
         body["items"][0]["poster_url"]
         == "https://image.tmdb.org/t/p/w780/poster.jpg"

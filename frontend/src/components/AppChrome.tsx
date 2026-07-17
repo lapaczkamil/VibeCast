@@ -3,7 +3,6 @@ import type {
   SectionState,
   SpotifyProfile,
 } from "../types";
-import { NowPlayingDock } from "./NowPlayingDock";
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -33,6 +32,9 @@ export function AppChrome({
     profile.status === "ok" ? profile.data!.display_name : "…";
   const imageUrl =
     profile.status === "ok" ? profile.data!.image_url : null;
+  const isPlaying =
+    currentlyPlaying.status === "ok" &&
+    currentlyPlaying.data?.is_playing === true;
 
   return (
     <header className="chrome">
@@ -42,10 +44,17 @@ export function AppChrome({
           <nav className="chrome-nav" aria-label="Primary">
             <button
               type="button"
-              className="chrome-btn chrome-btn--nav"
+              className={
+                isPlaying
+                  ? "chrome-btn chrome-btn--nav chrome-btn--live"
+                  : "chrome-btn chrome-btn--nav"
+              }
               onClick={onOpenListening}
             >
               Listening
+              {isPlaying ? (
+                <span className="chrome-live-dot" aria-hidden="true" />
+              ) : null}
             </button>
             <button
               type="button"
@@ -56,11 +65,6 @@ export function AppChrome({
             </button>
           </nav>
         </div>
-
-        <NowPlayingDock
-          currentlyPlaying={currentlyPlaying}
-          onOpenListening={onOpenListening}
-        />
 
         <div className="chrome-right">
           <div className="profile-cluster profile-cluster--chrome">

@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { searchSpotifyTracks } from "../api";
+import { setSeedDragData } from "../lib/seedDrag";
 import { isSeedSelected } from "../lib/seeds";
+import {
+  TOP_TRACKS_RANGE_LABELS,
+  type TopTracksRange,
+} from "../lib/topTracksRange";
 import type {
   CurrentlyPlayingResponse,
   RecentlyPlayedResponse,
@@ -9,7 +14,6 @@ import type {
   TopTracksResponse,
   TrackSearchItem,
 } from "../types";
-import { MAX_SEEDS } from "../types";
 import { Drawer } from "./Drawer";
 import { DashboardSection } from "./DashboardSection";
 import { NowPlaying } from "./NowPlaying";
@@ -21,10 +25,13 @@ type ListeningDrawerProps = {
   currentlyPlaying: SectionState<CurrentlyPlayingResponse>;
   recentlyPlayed: SectionState<RecentlyPlayedResponse>;
   topTracks: SectionState<TopTracksResponse>;
+  topTracksRange: TopTracksRange;
+  onTopTracksRangeChange: (range: TopTracksRange) => void;
   seeds: SeedTrack[];
-  onToggleSeed: (track: SeedTrack) => void;
   onClearSeeds: () => void;
-  limitHint: string | null;
+  seedDragging: boolean;
+  onSeedDragStart: (track: SeedTrack) => void;
+  onSeedDragEnd: () => void;
   onRetryCurrentlyPlaying: () => void;
   onRetryRecentlyPlayed: () => void;
   onRetryTopTracks: () => void;
@@ -33,35 +40,37 @@ type ListeningDrawerProps = {
 function SearchResultRow({
   track,
   selectedIds,
-  onToggle,
-  disabledAdd,
+  onSeedDragStart,
+  onSeedDragEnd,
 }: {
   track: TrackSearchItem;
   selectedIds: Set<string>;
-  onToggle: (track: SeedTrack) => void;
-  disabledAdd: boolean;
+  onSeedDragStart: (track: SeedTrack) => void;
+  onSeedDragEnd: () => void;
 }) {
   const seedTrack: SeedTrack = {
     id: track.id,
     name: track.name,
     artists: track.artists,
+    image_url: track.image_url,
   };
   const selected = isSeedSelected(selectedIds, track.id);
 
   return (
-    <li className="track-item track-item--search">
-      <button
-        type="button"
-        className={selected ? "seed-toggle seed-toggle--selected" : "seed-toggle"}
-        aria-pressed={selected}
-        aria-label={
-          selected
-            ? `Remove ${track.name} from seeds`
-            : `Add ${track.name} to seeds`
-        }
-        disabled={disabledAdd && !selected}
-        onClick={() => onToggle(seedTrack)}
-      />
+    <li
+      className={
+        selected
+          ? "track-item track-item--search track-item--draggable track-item--selected"
+          : "track-item track-item--search track-item--draggable"
+      }
+      draggable
+      onDragStart={(event) => {
+        setSeedDragData(event.dataTransfer, seedTrack);
+        onSeedDragStart(seedTrack);
+      }}
+      onDragEnd={onSeedDragEnd}
+      title="Drop on the match slot"
+    >
       {track.image_url ? (
         <img
           src={track.image_url}
@@ -69,9 +78,13 @@ function SearchResultRow({
           className="search-track-art"
           width={40}
           height={40}
+          draggable={false}
         />
       ) : (
-        <span className="search-track-art search-track-art--placeholder" aria-hidden="true" />
+        <span
+          className="search-track-art search-track-art--placeholder"
+          aria-hidden="true"
+        />
       )}
       <div className="track-main">
         <a
@@ -79,6 +92,7 @@ function SearchResultRow({
           target="_blank"
           rel="noopener noreferrer"
           className="track-title"
+          draggable={false}
         >
           {track.name}
         </a>
@@ -92,18 +106,17 @@ function SearchResultRow({
 
 export function ListeningDrawer(props: ListeningDrawerProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<TrackSearchItem[]>([]);
 
   const selectedIds = new Set(props.seeds.map((s) => s.id));
-  const disabledAdd = props.seeds.length >= MAX_SEEDS;
 
   useEffect(() => {
     if (!props.open) {
       setSearchQuery("");
-      setDebouncedQuery("");
+      setActiveQuery("");
       setSearchResults([]);
       setSearchError(null);
       setSearchLoading(false);
@@ -111,12 +124,7 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
   }, [props.open]);
 
   useEffect(() => {
-    const id = window.setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
-    return () => window.clearTimeout(id);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    if (!debouncedQuery) {
+    if (!activeQuery) {
       setSearchResults([]);
       setSearchError(null);
       setSearchLoading(false);
@@ -127,7 +135,7 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
     setSearchLoading(true);
     setSearchError(null);
 
-    void searchSpotifyTracks(debouncedQuery, 10)
+    void searchSpotifyTracks(activeQuery, 10)
       .then((data) => {
         if (!cancelled) {
           setSearchResults(data.items);
@@ -147,14 +155,20 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery]);
+  }, [activeQuery]);
 
   const runSearchNow = () => {
-    setDebouncedQuery(searchQuery.trim());
+    setActiveQuery(searchQuery.trim());
   };
 
   return (
-    <Drawer title="Listening" open={props.open} onClose={props.onClose}>
+    <Drawer
+      title="Listening"
+      open={props.open}
+      onClose={props.onClose}
+      softBackdrop
+      passThroughBackdrop={props.seedDragging}
+    >
       <div className="listening-drawer">
         <div className="listening-drawer-scroll">
           <section className="listening-search" aria-label="Search Spotify tracks">
@@ -166,7 +180,7 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
                 id="track-search"
                 type="search"
                 className="listening-search-input"
-                placeholder="Song or artist…"
+                placeholder="Song or artist… (press Enter)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -185,7 +199,7 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
                 {searchError}
               </p>
             ) : null}
-            {debouncedQuery && !searchLoading && searchResults.length === 0 && !searchError ? (
+            {activeQuery && !searchLoading && searchResults.length === 0 && !searchError ? (
               <p className="empty-state">No tracks found.</p>
             ) : null}
             {searchResults.length > 0 ? (
@@ -195,8 +209,8 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
                     key={track.id}
                     track={track}
                     selectedIds={selectedIds}
-                    onToggle={props.onToggleSeed}
-                    disabledAdd={disabledAdd}
+                    onSeedDragStart={props.onSeedDragStart}
+                    onSeedDragEnd={props.onSeedDragEnd}
                   />
                 ))}
               </ol>
@@ -212,8 +226,8 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
               <NowPlaying
                 data={data}
                 selectedIds={selectedIds}
-                onToggle={props.onToggleSeed}
-                disabledAdd={disabledAdd}
+                onSeedDragStart={props.onSeedDragStart}
+                onSeedDragEnd={props.onSeedDragEnd}
               />
             )}
           </DashboardSection>
@@ -227,40 +241,77 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
               <RecentTrackList
                 items={data.items}
                 selectedIds={selectedIds}
-                onToggle={props.onToggleSeed}
-                disabledAdd={disabledAdd}
+                onSeedDragStart={props.onSeedDragStart}
+                onSeedDragEnd={props.onSeedDragEnd}
               />
             )}
           </DashboardSection>
 
-          <DashboardSection
-            title="Top tracks"
-            state={props.topTracks}
-            onRetry={props.onRetryTopTracks}
-          >
-            {(data) => (
+          <section className="dashboard-section" aria-label="Top tracks">
+            <h2 className="section-title">Top tracks</h2>
+            <div
+              className="top-range-filters"
+              role="group"
+              aria-label="Top tracks time range"
+            >
+              {(Object.keys(TOP_TRACKS_RANGE_LABELS) as TopTracksRange[]).map(
+                (range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    className={
+                      props.topTracksRange === range
+                        ? "top-range-btn top-range-btn--active"
+                        : "top-range-btn"
+                    }
+                    aria-pressed={props.topTracksRange === range}
+                    onClick={() => props.onTopTracksRangeChange(range)}
+                  >
+                    {TOP_TRACKS_RANGE_LABELS[range]}
+                  </button>
+                ),
+              )}
+            </div>
+            {props.topTracks.status === "idle" ? (
+              <p className="status-message section-status">Not loaded yet.</p>
+            ) : null}
+            {props.topTracks.status === "loading" ? (
+              <p className="status-message section-status">Loading…</p>
+            ) : null}
+            {props.topTracks.status === "error" ? (
+              <div className="section-error">
+                <p className="status-message status-message--error">
+                  {props.topTracks.error ?? "Something went wrong."}
+                </p>
+                <button
+                  type="button"
+                  className="cta cta--ghost"
+                  onClick={props.onRetryTopTracks}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : null}
+            {props.topTracks.status === "ok" && props.topTracks.data ? (
               <TopTrackList
-                items={data.items}
+                key={props.topTracksRange}
+                items={props.topTracks.data.items}
                 selectedIds={selectedIds}
-                onToggle={props.onToggleSeed}
-                disabledAdd={disabledAdd}
+                onSeedDragStart={props.onSeedDragStart}
+                onSeedDragEnd={props.onSeedDragEnd}
               />
-            )}
-          </DashboardSection>
+            ) : null}
+          </section>
         </div>
 
         <footer className="listening-footer">
-          {props.limitHint ? (
-            <p className="listening-footer-hint" role="status">
-              {props.limitHint}
-            </p>
-          ) : null}
           <div className="listening-footer-row">
             <p className="listening-footer-count">
-              <span className="listening-footer-count-label">Selected</span>
+              <span className="listening-footer-count-label">Track</span>
               <span className="listening-footer-count-value" aria-live="polite">
-                {props.seeds.length}
-                <span className="listening-footer-count-max">/{MAX_SEEDS}</span>
+                {props.seeds.length === 0
+                  ? "None"
+                  : props.seeds[0]?.name ?? "Selected"}
               </span>
             </p>
             <button

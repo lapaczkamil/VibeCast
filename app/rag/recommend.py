@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from fastapi import HTTPException
 
-from app.movies.client import _map_poster_url
+from app.config import settings
+from app.movies.client import _map_poster_url, _map_rating, fetch_movie
 from app.rag.ollama_client import chat_json, embed_texts
 from app.rag.schemas import (
     RecommendMovieItem,
@@ -30,7 +32,7 @@ RAG_TOP_K = 8
 RECENT_LIMIT = 10
 TOP_TRACKS_LIMIT = 5
 TOP_ARTISTS_LIMIT = 5
-MAX_SEEDS = 5
+MAX_SEEDS = 1
 
 
 class RecommendationParseError(Exception):
@@ -183,16 +185,54 @@ def _map_validated_items(
         meta = candidates_by_id.get(int(tmdb_id))
         if meta is None:
             continue
+        year = meta.get("year") or None
+        if year == "":
+            year = None
         validated.append(
             RecommendMovieItem(
                 tmdb_id=int(tmdb_id),
                 title=str(item.get("title") or meta.get("title") or "Unknown"),
-                year=meta.get("year"),
+                year=year,
                 poster_url=_map_poster_url(meta.get("poster_path"), size="w780"),
+                rating=_map_rating(meta.get("rating")),
                 reason=str(item.get("reason") or ""),
             )
         )
     return validated
+
+
+async def _enrich_missing_ratings(
+    items: list[RecommendMovieItem],
+) -> list[RecommendMovieItem]:
+    api_key = settings.tmdb_api_key
+    missing = [item for item in items if item.rating is None]
+    if not api_key or not missing:
+        return items
+
+    async def _rating_for(item: RecommendMovieItem) -> float | None:
+        try:
+            response = await fetch_movie(api_key, item.tmdb_id)
+            if response.status_code != 200:
+                return None
+            return _map_rating(response.json().get("vote_average"))
+        except Exception:
+            return None
+
+    ratings = await asyncio.gather(*[_rating_for(item) for item in missing])
+    by_id = {
+        item.tmdb_id: rating
+        for item, rating in zip(missing, ratings, strict=True)
+        if rating is not None
+    }
+    if not by_id:
+        return items
+
+    return [
+        item.model_copy(update={"rating": by_id[item.tmdb_id]})
+        if item.tmdb_id in by_id
+        else item
+        for item in items
+    ]
 
 
 async def recommend_for_user(
@@ -200,7 +240,7 @@ async def recommend_for_user(
 ) -> RecommendResponse:
     request = request or RecommendRequest()
     if len(request.tracks) > MAX_SEEDS:
-        raise HTTPException(status_code=422, detail="At most 5 tracks allowed")
+        raise HTTPException(status_code=422, detail="At most 1 track allowed")
 
     seeds = _normalize_seeds(request.tracks)
     if seeds:
@@ -227,7 +267,9 @@ async def recommend_for_user(
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise RecommendationParseError() from exc
 
+    items = _map_validated_items(llm_items, metadatas)
+    items = await _enrich_missing_ratings(items)
     return RecommendResponse(
         mood_summary=mood_summary,
-        items=_map_validated_items(llm_items, metadatas),
+        items=items,
     )

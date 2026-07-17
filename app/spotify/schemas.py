@@ -50,6 +50,14 @@ class TopTracksResponse(BaseModel):
     items: list[TopTrackItem]
 
 
+class SessionResponse(BaseModel):
+    me: SpotifyProfile
+    recently_played: RecentlyPlayedResponse
+    top_tracks: TopTracksResponse
+    currently_playing: CurrentlyPlayingResponse
+    from_cache: bool = False
+
+
 class TopArtistItem(BaseModel):
     artist_id: str
     name: str

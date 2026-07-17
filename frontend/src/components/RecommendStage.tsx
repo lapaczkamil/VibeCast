@@ -8,14 +8,18 @@ import {
 } from "../lib/posterPalette";
 import { tmdbPosterUrl } from "../lib/tmdbPoster";
 import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
+import { MatchDropZone } from "./MatchDropZone";
+import { RecommendLoading } from "./RecommendLoading";
+import { TmdbLogo } from "./TmdbLogo";
 
 type RecommendPhase = "idle" | "loading" | "empty" | "ok" | "error";
 
 type RecommendStageProps = {
   drawerOpen: boolean;
+  seedDragging: boolean;
   seeds: SeedTrack[];
-  hasNowPlaying: boolean;
   isPlaying: boolean;
+  onDropSeed: (track: SeedTrack) => void;
   onRemoveSeed: (id: string) => void;
 };
 
@@ -34,16 +38,16 @@ function stackCardRole(
   const next = nextIndex(active, count);
   const prev = prevIndex(active, count);
   if (index === next) return "next";
-  // When only 2 items, next === prev — show a single peek behind.
   if (index === prev && prev !== next) return "prev";
   return "hidden";
 }
 
 export function RecommendStage({
   drawerOpen,
+  seedDragging,
   seeds,
-  hasNowPlaying,
   isPlaying,
+  onDropSeed,
   onRemoveSeed,
 }: RecommendStageProps) {
   const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
@@ -52,6 +56,7 @@ export function RecommendStage({
   const [results, setResults] = useState<RecommendResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [loadingLine, setLoadingLine] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -65,7 +70,17 @@ export function RecommendStage({
       });
   }, []);
 
+  useEffect(() => {
+    if (phase !== "loading") return;
+    setLoadingLine(0);
+    const id = window.setInterval(() => {
+      setLoadingLine((n) => n + 1);
+    }, 1600);
+    return () => window.clearInterval(id);
+  }, [phase]);
+
   const runRecommend = useCallback(async () => {
+    if (seeds.length === 0) return;
     setPhase("loading");
     setError(null);
     setResults(null);
@@ -87,7 +102,10 @@ export function RecommendStage({
   const ollamaReady = ragStatus?.ollama_reachable ?? false;
   const ragReady = indexReady && ollamaReady;
   const hasSeeds = seeds.length > 0;
-  const canRun = ragReady && (hasSeeds || hasNowPlaying);
+  const canRun = ragReady && hasSeeds;
+  const showMatchZone =
+    phase === "idle" || phase === "error" || phase === "empty";
+  const showSelectedTrack = phase === "ok" || phase === "loading";
 
   const items = results?.items ?? [];
   const itemCount = items.length;
@@ -181,28 +199,23 @@ export function RecommendStage({
         : "Recommend";
 
   return (
-    <section className="stage" aria-label="Movie recommendations">
+    <section
+      className={seedDragging ? "stage stage--drop-target" : "stage"}
+      aria-label="Movie recommendations"
+    >
       <div
         className={
-          phase === "ok"
-            ? "stage-wash stage-wash--loaded"
-            : "stage-wash"
+          phase === "ok" ? "stage-wash stage-wash--loaded" : "stage-wash"
         }
         aria-hidden="true"
       />
       <div className="stage-inner">
-        {phase === "idle" || phase === "error" || phase === "empty" ? (
+        {showMatchZone ? (
           <header className="stage-intro">
             <p className="stage-eyebrow">Music → Movie</p>
-            <h2 className="stage-heading">Match films to the mood in your mix</h2>
+            <h2 className="stage-heading">Match a film to one track</h2>
             <p className="stage-lede">
-              Pull seed tracks from Listening, drop in a search hit, or ride
-              what's playing — then run the match.
-            </p>
-            <p className="stage-signal-meta">
-              <span>
-                Seeds: <strong>{seeds.length}/5</strong>
-              </span>
+              Open Listening and drop one track onto the slot.
             </p>
           </header>
         ) : (
@@ -217,70 +230,34 @@ export function RecommendStage({
           </p>
         ) : null}
 
-        {ragStatus && !indexReady ? (
-          <p className="recommend-hint recommend-hint--warn" role="status">
-            Movie index not built yet. Pull Ollama models, then run{" "}
-            <code className="recommend-code">python -m app.rag.ingest</code> on
-            the server.
-          </p>
-        ) : null}
-
-        {ragStatus && indexReady && !ollamaReady ? (
-          <p className="recommend-hint recommend-hint--warn" role="status">
-            Ollama is not reachable. Start Ollama and pull{" "}
-            <code className="recommend-code">{ragStatus.chat_model}</code> and{" "}
-            <code className="recommend-code">{ragStatus.embed_model}</code>.
-          </p>
-        ) : null}
-
-        {ragReady && !hasSeeds && !hasNowPlaying ? (
+        {ragReady && !hasSeeds ? (
           <p className="recommend-hint" role="status">
-            Select up to 5 seed tracks in Listening, or play something on
-            Spotify, to get recommendations.
+            Drop a track into the slot to unlock recommendations.
           </p>
         ) : null}
 
-        {seeds.length > 0 ? (
-          <div className="seed-chips" aria-label="Selected seed tracks">
-            {seeds.map((track) => (
-              <span key={track.id} className="seed-chip">
-                <span className="seed-chip-label">
-                  {track.name}
-                  <span className="seed-chip-artists">
-                    {" "}
-                    · {track.artists.join(", ")}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="seed-chip-remove"
-                  aria-label={`Remove ${track.name} from seeds`}
-                  onClick={() => onRemoveSeed(track.id)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
+        {showMatchZone ? (
+          <MatchDropZone
+            seeds={seeds}
+            active={seedDragging}
+            disabled={false}
+            onDropSeed={onDropSeed}
+            onRemoveSeed={onRemoveSeed}
+          />
         ) : null}
 
-        {phase === "idle" ? (
-          <div className="stage-stack stage-stack--solo" aria-hidden="true">
-            <div className="stage-stack-card stage-stack-card--current stage-poster stage-poster--placeholder">
-              ?
-            </div>
-          </div>
+        {showSelectedTrack ? (
+          <MatchDropZone
+            seeds={seeds}
+            active={seedDragging}
+            disabled={false}
+            onDropSeed={onDropSeed}
+            onRemoveSeed={onRemoveSeed}
+          />
         ) : null}
 
         {phase === "loading" ? (
-          <>
-            <div className="stage-stack stage-stack--solo" aria-hidden="true">
-              <div className="stage-stack-card stage-stack-card--current stage-poster stage-poster--skeleton" />
-            </div>
-            <p className="status-message section-status">
-            Matching the mood in your tracks…
-          </p>
-          </>
+          <RecommendLoading lineIndex={loadingLine} />
         ) : null}
 
         {phase === "error" && error ? (
@@ -295,7 +272,7 @@ export function RecommendStage({
 
         {phase === "ok" && activeMovie ? (
           <>
-            <div className="stage-feature">
+            <div className="stage-feature stage-feature--reveal">
               <div
                 className="stage-carousel"
                 onTouchStart={onTouchStart}
@@ -320,6 +297,19 @@ export function RecommendStage({
                   }
                   aria-live="polite"
                 >
+                  {activePosterUrl ? (
+                    <img
+                      key={activePosterUrl}
+                      className="stage-ambilight"
+                      src={activePosterUrl}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      crossOrigin="anonymous"
+                      decoding="async"
+                    />
+                  ) : null}
+                  <div className="stage-ambilight-leds" aria-hidden="true" />
                   {items.map((movie, index) => {
                     const role = stackCardRole(index, activeIndex, itemCount);
                     const poster = tmdbPosterUrl(movie.poster_url, "w780");
@@ -380,6 +370,12 @@ export function RecommendStage({
                   </span>
                 ) : null}
                 {activeMovie.year ? <span>{activeMovie.year}</span> : null}
+                {activeMovie.rating != null ? (
+                  <span className="stage-rating" title="TMDB rating">
+                    ★ {activeMovie.rating.toFixed(1)}
+                  </span>
+                ) : null}
+                <TmdbLogo className="tmdb-logo tmdb-logo--stage" />
               </p>
               <h2 className="stage-title">{activeMovie.title}</h2>
               {results?.mood_summary ? (

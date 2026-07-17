@@ -1,42 +1,26 @@
-export type PosterPalette = {
-  accent: string;
-  accentHot: string;
-  accentWarm: string;
-  accentText: string;
-  accentGlow: string;
+export type PosterEdgeGlow = {
+  top: string;
+  right: string;
+  bottom: string;
+  left: string;
   projector: string;
-  bgDeep: string;
-  bgMid: string;
-  surface: string;
-  surface2: string;
 };
 
 type Rgb = { r: number; g: number; b: number };
 type Hsl = { h: number; s: number; l: number };
 
-const PALETTE_VARS = [
-  "--accent",
-  "--accent-hot",
-  "--accent-warm",
-  "--accent-text",
-  "--accent-glow",
+const GLOW_VARS = [
+  "--glow-top",
+  "--glow-right",
+  "--glow-bottom",
+  "--glow-left",
   "--projector",
-  "--bg-deep",
-  "--bg-mid",
-  "--surface",
-  "--surface-2",
 ] as const;
 
-const FALLBACK: Rgb = { r: 29, g: 185, b: 84 };
+const FALLBACK: Rgb = { r: 180, g: 180, b: 190 };
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
-}
-
-function rgbToHex({ r, g, b }: Rgb): string {
-  return `#${[r, g, b]
-    .map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0"))
-    .join("")}`;
 }
 
 function mix(a: Rgb, b: Rgb, t: number): Rgb {
@@ -90,12 +74,19 @@ function hslToRgb({ h, s, l }: Hsl): Rgb {
   };
 }
 
-function relativeLuminance({ r, g, b }: Rgb): number {
-  const lin = [r, g, b].map((c) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+function toGlowRgba(color: Rgb, alpha: number): string {
+  const boosted = boostForLed(color);
+  return `rgba(${Math.round(boosted.r)}, ${Math.round(boosted.g)}, ${Math.round(boosted.b)}, ${alpha})`;
+}
+
+/** Push edge colors toward richer LED-like saturation. */
+function boostForLed(color: Rgb): Rgb {
+  const hsl = rgbToHsl(color);
+  return hslToRgb({
+    h: hsl.h,
+    s: clamp(hsl.s * 1.1 + 0.04, 0.18, 0.75),
+    l: clamp(hsl.l * 0.75 + 0.08, 0.16, 0.48),
   });
-  return 0.2126 * lin[0]! + 0.7152 * lin[1]! + 0.0722 * lin[2]!;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -104,194 +95,141 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     img.crossOrigin = "anonymous";
     img.decoding = "async";
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Failed to load poster for palette"));
+    img.onerror = () => reject(new Error("Failed to load poster for glow"));
     img.src = url;
   });
 }
 
-type Bucket = {
-  count: number;
-  weight: number;
-  sum: Rgb;
-};
+function averageEdgeStrip(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  region: "top" | "right" | "bottom" | "left",
+): Rgb {
+  const strip = Math.max(2, Math.round(Math.min(width, height) * 0.14));
+  let sum: Rgb = { r: 0, g: 0, b: 0 };
+  let count = 0;
+
+  const include = (x: number, y: number) => {
+    const i = (y * width + x) * 4;
+    const a = data[i + 3]!;
+    if (a < 180) return;
+    const color = { r: data[i]!, g: data[i + 1]!, b: data[i + 2]! };
+    const { s, l } = rgbToHsl(color);
+    // Skip hard letterbox bars, keep muted edge tones.
+    if (l < 0.04 || l > 0.96) return;
+    const w = 0.35 + s * 0.65;
+    sum = {
+      r: sum.r + color.r * w,
+      g: sum.g + color.g * w,
+      b: sum.b + color.b * w,
+    };
+    count += w;
+  };
+
+  if (region === "top") {
+    for (let y = 0; y < strip; y += 1) {
+      for (let x = 0; x < width; x += 1) include(x, y);
+    }
+  } else if (region === "bottom") {
+    for (let y = height - strip; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) include(x, y);
+    }
+  } else if (region === "left") {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < strip; x += 1) include(x, y);
+    }
+  } else {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = width - strip; x < width; x += 1) include(x, y);
+    }
+  }
+
+  if (count <= 0) return FALLBACK;
+  return {
+    r: sum.r / count,
+    g: sum.g / count,
+    b: sum.b / count,
+  };
+}
 
 /**
- * Dominant hue from the poster core (not edges), weighted by how often
- * that hue appears × how saturated it is — closer to what the eye reads.
+ * Sample pixels along the poster frame edges (Ambilight / bias-light style).
  */
-function dominantFromPixels(data: Uint8ClampedArray): Rgb {
-  const bins = 24;
-  const buckets: Bucket[] = Array.from({ length: bins }, () => ({
-    count: 0,
-    weight: 0,
-    sum: { r: 0, g: 0, b: 0 },
-  }));
-
-  let mutedSum: Rgb = { r: 0, g: 0, b: 0 };
-  let mutedCount = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3]!;
-    if (a < 200) continue;
-
-    const color = { r: data[i]!, g: data[i + 1]!, b: data[i + 2]! };
-    const { h, s, l } = rgbToHsl(color);
-
-    // Skip near-black / near-white letterbox and text blocks.
-    if (l < 0.08 || l > 0.92) continue;
-
-    if (s < 0.18) {
-      mutedSum = {
-        r: mutedSum.r + color.r,
-        g: mutedSum.g + color.g,
-        b: mutedSum.b + color.b,
-      };
-      mutedCount += 1;
-      continue;
-    }
-
-    // Prefer midtones — poster key art usually lives here.
-    const toneBias = 1 - Math.min(1, Math.abs(l - 0.45) / 0.45);
-    const idx = Math.min(bins - 1, Math.floor((h / 360) * bins));
-    const bucket = buckets[idx]!;
-    const w = s * (0.55 + toneBias * 0.45);
-    bucket.count += 1;
-    bucket.weight += w;
-    bucket.sum.r += color.r * w;
-    bucket.sum.g += color.g * w;
-    bucket.sum.b += color.b * w;
-  }
-
-  let best: Bucket | null = null;
-  for (const bucket of buckets) {
-    if (bucket.count < 4) continue;
-    if (!best || bucket.weight > best.weight) best = bucket;
-  }
-
-  if (best && best.weight > 0) {
-    return {
-      r: best.sum.r / best.weight,
-      g: best.sum.g / best.weight,
-      b: best.sum.b / best.weight,
-    };
-  }
-
-  if (mutedCount > 0) {
-    return {
-      r: mutedSum.r / mutedCount,
-      g: mutedSum.g / mutedCount,
-      b: mutedSum.b / mutedCount,
-    };
-  }
-
-  return FALLBACK;
-}
-
-/** Keep hue/sat from the poster; only nudge lightness so UI stays usable. */
-function uiAccentFromSource(source: Rgb): Rgb {
-  const hsl = rgbToHsl(source);
-  const s = clamp(hsl.s * 1.08, 0.35, 0.92);
-  const l = clamp(hsl.l, 0.38, 0.62);
-  return hslToRgb({ h: hsl.h, s, l });
-}
-
-function readableText(accent: Rgb): Rgb {
-  const hsl = rgbToHsl(accent);
-  if (relativeLuminance(accent) < 0.4) {
-    return hslToRgb({
-      h: hsl.h,
-      s: clamp(hsl.s, 0.35, 0.85),
-      l: clamp(hsl.l + 0.22, 0.55, 0.72),
-    });
-  }
-  return hslToRgb({
-    h: hsl.h,
-    s: clamp(hsl.s, 0.3, 0.8),
-    l: clamp(hsl.l - 0.08, 0.32, 0.55),
-  });
-}
-
-/** Sample the poster core (crop edges — often black bars / frames). */
-export async function extractPosterPalette(
+export async function extractPosterEdgeGlow(
   imageUrl: string,
-): Promise<PosterPalette> {
+): Promise<PosterEdgeGlow> {
   const img = await loadImage(imageUrl);
-  const size = 72;
+  const size = 96;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas unsupported");
 
-  const crop = 0.12;
-  const sx = img.naturalWidth * crop;
-  const sy = img.naturalHeight * crop;
-  const sw = img.naturalWidth * (1 - crop * 2);
-  const sh = img.naturalHeight * (1 - crop * 2);
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
-
+  ctx.drawImage(img, 0, 0, size, size);
   const { data } = ctx.getImageData(0, 0, size, size);
-  const source = dominantFromPixels(data);
-  const accentRgb = uiAccentFromSource(source);
-  const sourceHsl = rgbToHsl(source);
 
-  // Atmosphere uses the real poster color (not the UI-lifted accent).
-  const atmosphere = hslToRgb({
-    h: sourceHsl.h,
-    s: clamp(sourceHsl.s * 0.95, 0.2, 0.85),
-    l: clamp(sourceHsl.l * 0.55, 0.12, 0.38),
+  const top = averageEdgeStrip(data, size, size, "top");
+  const right = averageEdgeStrip(data, size, size, "right");
+  const bottom = averageEdgeStrip(data, size, size, "bottom");
+  const left = averageEdgeStrip(data, size, size, "left");
+
+  const atmosphere = mix(
+    mix(top, bottom, 0.5),
+    mix(left, right, 0.5),
+    0.5,
+  );
+  const atmHsl = rgbToHsl(atmosphere);
+  const soft = hslToRgb({
+    h: atmHsl.h,
+    s: clamp(atmHsl.s * 0.9, 0.15, 0.8),
+    l: clamp(atmHsl.l * 0.5, 0.1, 0.36),
   });
 
-  const white = { r: 255, g: 255, b: 255 };
-  const black = { r: 0, g: 0, b: 0 };
-  const accentHot = mix(accentRgb, white, 0.18);
-  const accentWarm = mix(accentRgb, black, 0.18);
-  const text = readableText(accentRgb);
-
-  const ar = Math.round(accentRgb.r);
-  const ag = Math.round(accentRgb.g);
-  const ab = Math.round(accentRgb.b);
-  const sr = Math.round(atmosphere.r);
-  const sg = Math.round(atmosphere.g);
-  const sb = Math.round(atmosphere.b);
-
-  const baseDeep = { r: 12, g: 12, b: 12 };
-  const baseMid = { r: 20, g: 20, b: 20 };
-  const baseSurface = { r: 22, g: 22, b: 22 };
-  const baseSurface2 = { r: 36, g: 36, b: 36 };
-
   return {
-    accent: rgbToHex(accentRgb),
-    accentHot: rgbToHex(accentHot),
-    accentWarm: rgbToHex(accentWarm),
-    accentText: rgbToHex(text),
-    accentGlow: `rgba(${ar}, ${ag}, ${ab}, 0.4)`,
-    projector: `rgba(${sr}, ${sg}, ${sb}, 0.42)`,
-    bgDeep: rgbToHex(mix(baseDeep, atmosphere, 0.42)),
-    bgMid: rgbToHex(mix(baseMid, atmosphere, 0.36)),
-    surface: rgbToHex(mix(baseSurface, atmosphere, 0.28)),
-    surface2: rgbToHex(mix(baseSurface2, atmosphere, 0.32)),
+    top: toGlowRgba(top, 0.42),
+    right: toGlowRgba(right, 0.42),
+    bottom: toGlowRgba(bottom, 0.38),
+    left: toGlowRgba(left, 0.42),
+    projector: `rgba(${Math.round(soft.r)}, ${Math.round(soft.g)}, ${Math.round(soft.b)}, 0.2)`,
   };
 }
 
-export function applyPosterPalette(palette: PosterPalette): void {
+/** @deprecated Prefer extractPosterEdgeGlow — kept for call-site clarity. */
+export async function extractPosterPalette(
+  imageUrl: string,
+): Promise<PosterEdgeGlow> {
+  return extractPosterEdgeGlow(imageUrl);
+}
+
+export function applyPosterPalette(glow: PosterEdgeGlow): void {
   const root = document.documentElement;
-  root.style.setProperty("--accent", palette.accent);
-  root.style.setProperty("--accent-hot", palette.accentHot);
-  root.style.setProperty("--accent-warm", palette.accentWarm);
-  root.style.setProperty("--accent-text", palette.accentText);
-  root.style.setProperty("--accent-glow", palette.accentGlow);
-  root.style.setProperty("--projector", palette.projector);
-  root.style.setProperty("--bg-deep", palette.bgDeep);
-  root.style.setProperty("--bg-mid", palette.bgMid);
-  root.style.setProperty("--surface", palette.surface);
-  root.style.setProperty("--surface-2", palette.surface2);
+  root.style.setProperty("--glow-top", glow.top);
+  root.style.setProperty("--glow-right", glow.right);
+  root.style.setProperty("--glow-bottom", glow.bottom);
+  root.style.setProperty("--glow-left", glow.left);
+  root.style.setProperty("--projector", glow.projector);
   root.dataset.posterTheme = "1";
 }
 
 export function clearPosterPalette(): void {
   const root = document.documentElement;
-  for (const key of PALETTE_VARS) {
+  for (const key of GLOW_VARS) {
+    root.style.removeProperty(key);
+  }
+  // Legacy vars from older palette passes
+  for (const key of [
+    "--accent",
+    "--accent-hot",
+    "--accent-warm",
+    "--accent-text",
+    "--accent-glow",
+    "--bg-deep",
+    "--bg-mid",
+    "--surface",
+    "--surface-2",
+  ]) {
     root.style.removeProperty(key);
   }
   delete root.dataset.posterTheme;

@@ -1,18 +1,19 @@
+import { setSeedDragData } from "../lib/seedDrag";
 import { isSeedSelected } from "../lib/seeds";
 import type { CurrentlyPlayingResponse, SeedTrack } from "../types";
 
 type NowPlayingProps = {
   data: CurrentlyPlayingResponse;
   selectedIds?: Set<string> | string[];
-  onToggle?: (track: SeedTrack) => void;
-  disabledAdd?: boolean;
+  onSeedDragStart?: (track: SeedTrack) => void;
+  onSeedDragEnd?: () => void;
 };
 
 export function NowPlaying({
   data,
   selectedIds,
-  onToggle,
-  disabledAdd = false,
+  onSeedDragStart,
+  onSeedDragEnd,
 }: NowPlayingProps) {
   if (!data.track) {
     return (
@@ -27,28 +28,35 @@ export function NowPlaying({
     id: track.track_id,
     name: track.name,
     artists: track.artists,
+    image_url: track.image_url,
   };
-  const selectable = Boolean(onToggle && selectedIds);
-  const selected = selectable && isSeedSelected(selectedIds!, track.track_id);
+  const draggable = Boolean(onSeedDragStart);
+  const selected =
+    selectedIds != null && isSeedSelected(selectedIds, track.track_id);
 
   return (
-    <div className="now-playing">
-      {selectable ? (
-        <button
-          type="button"
-          className={
-            selected ? "seed-toggle seed-toggle--selected" : "seed-toggle"
-          }
-          aria-pressed={selected}
-          aria-label={
-            selected
-              ? `Remove ${track.name} from seeds`
-              : `Add ${track.name} to seeds`
-          }
-          disabled={disabledAdd && !selected}
-          onClick={() => onToggle!(seedTrack)}
-        />
-      ) : null}
+    <div
+      className={
+        [
+          "now-playing",
+          draggable ? "now-playing--draggable" : "",
+          selected ? "now-playing--selected" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      }
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (event) => {
+              setSeedDragData(event.dataTransfer, seedTrack);
+              onSeedDragStart?.(seedTrack);
+            }
+          : undefined
+      }
+      onDragEnd={draggable ? () => onSeedDragEnd?.() : undefined}
+      title={draggable ? "Drop on the match slot" : undefined}
+    >
       {track.image_url && (
         <img
           src={track.image_url}
@@ -56,6 +64,7 @@ export function NowPlaying({
           className="now-playing-art"
           width={96}
           height={96}
+          draggable={false}
         />
       )}
       <div className="now-playing-body">
@@ -64,6 +73,7 @@ export function NowPlaying({
           target="_blank"
           rel="noopener noreferrer"
           className="now-playing-title"
+          draggable={false}
         >
           {track.name}
         </a>

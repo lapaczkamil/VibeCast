@@ -8,6 +8,7 @@ from typing import Any
 
 from app.config import settings
 from app.movies.client import (
+    _map_rating,
     _map_year,
     fetch_genre_list_sync,
     fetch_popular_page_sync,
@@ -65,6 +66,7 @@ def _collect_movies(
                     "title": result.get("title") or "Unknown",
                     "year": _map_year(result.get("release_date")),
                     "poster_path": result.get("poster_path"),
+                    "rating": _map_rating(result.get("vote_average")),
                     "overview": overview,
                     "genre_names": map_genre_ids(
                         result.get("genre_ids") or [], genre_map
@@ -124,6 +126,7 @@ def run_ingest() -> int:
                 "title": movie["title"],
                 "year": movie["year"] or "",
                 "poster_path": movie["poster_path"] or "",
+                "rating": movie["rating"] if movie["rating"] is not None else 0.0,
             }
             for movie in batch
         ]

@@ -51,10 +51,23 @@ export type TopTracksResponse = {
   items: TopTrackItem[];
 };
 
+export type SessionResponse = {
+  me: SpotifyProfile;
+  recently_played: RecentlyPlayedResponse;
+  top_tracks: TopTracksResponse;
+  currently_playing: CurrentlyPlayingResponse;
+  from_cache: boolean;
+};
+
 export type SectionState<T> = {
-  status: "loading" | "ok" | "error";
+  status: "idle" | "loading" | "ok" | "error";
   data?: T;
   error?: string;
+};
+
+export type RateLimitStatus = {
+  blocked: boolean;
+  remaining_seconds: number;
 };
 
 export type MoviesStatus = {
@@ -68,6 +81,7 @@ export type MovieItem = {
   year: string | null;
   overview: string;
   poster_url: string | null;
+  rating: number | null;
 };
 
 export type MovieSearchResponse = {
@@ -90,6 +104,7 @@ export type RecommendMovieItem = {
   title: string;
   year: string | null;
   poster_url: string | null;
+  rating: number | null;
   reason: string;
 };
 
@@ -102,9 +117,10 @@ export type SeedTrack = {
   id: string;
   name: string;
   artists: string[];
+  image_url?: string | null;
 };
 
-export const MAX_SEEDS = 5;
+export const MAX_SEEDS = 1;
 
 export type TrackSearchItem = {
   id: string;
