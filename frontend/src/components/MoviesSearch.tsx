@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { fetchMoviesStatus, searchMovies } from "../api";
 import type { MovieItem, MovieSearchResponse } from "../types";
+import { TmdbLogo } from "./TmdbLogo";
 
 type SearchPhase = "idle" | "loading" | "empty" | "ok" | "error";
 
@@ -40,6 +41,13 @@ function MovieResult({ movie, index }: { movie: MovieItem; index: number }) {
           {movie.year ? (
             <span className="movie-year"> ({movie.year})</span>
           ) : null}
+          {movie.rating != null ? (
+            <span className="movie-rating" title="TMDB rating">
+              {" "}
+              · ★ {movie.rating.toFixed(1)}
+            </span>
+          ) : null}
+          <TmdbLogo className="tmdb-logo tmdb-logo--inline" />
         </p>
         {movie.overview ? (
           <p className="movie-overview">{truncateOverview(movie.overview)}</p>

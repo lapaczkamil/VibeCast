@@ -80,6 +80,7 @@ def test_movies_search_maps_results(monkeypatch):
                         "release_date": "2010-07-16",
                         "overview": "A thief...",
                         "poster_path": "/poster.jpg",
+                        "vote_average": 8.369,
                     }
                 ],
             },
@@ -91,7 +92,8 @@ def test_movies_search_maps_results(monkeypatch):
     assert body["query"] == "inception"
     assert body["items"][0]["id"] == 27205
     assert body["items"][0]["year"] == "2010"
-    assert body["items"][0]["poster_url"] == "https://image.tmdb.org/t/p/w185/poster.jpg"
+    assert body["items"][0]["poster_url"] == "https://image.tmdb.org/t/p/w342/poster.jpg"
+    assert body["items"][0]["rating"] == 8.4
     assert "test-key" not in str(body)
 
 

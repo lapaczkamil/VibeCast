@@ -8,6 +8,7 @@ class RecentlyPlayedItem(BaseModel):
     artists: list[str]
     album: str
     spotify_url: str
+    image_url: str | None
 
 
 class RecentlyPlayedResponse(BaseModel):
@@ -42,10 +43,19 @@ class TopTrackItem(BaseModel):
     artists: list[str]
     album: str
     spotify_url: str
+    image_url: str | None
 
 
 class TopTracksResponse(BaseModel):
     items: list[TopTrackItem]
+
+
+class SessionResponse(BaseModel):
+    me: SpotifyProfile
+    recently_played: RecentlyPlayedResponse
+    top_tracks: TopTracksResponse
+    currently_playing: CurrentlyPlayingResponse
+    from_cache: bool = False
 
 
 class TopArtistItem(BaseModel):
@@ -58,3 +68,16 @@ class TopArtistItem(BaseModel):
 
 class TopArtistsResponse(BaseModel):
     items: list[TopArtistItem]
+
+
+class TrackSearchItem(BaseModel):
+    id: str
+    name: str
+    artists: list[str]
+    album: str
+    spotify_url: str
+    image_url: str | None
+
+
+class TrackSearchResponse(BaseModel):
+    items: list[TrackSearchItem]

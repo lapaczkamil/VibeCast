@@ -12,6 +12,7 @@ class MovieItem(BaseModel):
     year: str | None
     overview: str
     poster_url: str | None
+    rating: float | None = None
 
 
 class MovieSearchResponse(BaseModel):

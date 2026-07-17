@@ -17,6 +17,9 @@ export function DashboardSection<T>({
   return (
     <section className="dashboard-section">
       <h2 className="section-title">{title}</h2>
+      {state.status === "idle" && (
+        <p className="status-message section-status">Not loaded yet.</p>
+      )}
       {state.status === "loading" && (
         <p className="status-message section-status">Loading…</p>
       )}

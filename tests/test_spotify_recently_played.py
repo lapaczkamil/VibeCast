@@ -36,7 +36,10 @@ def test_recently_played_maps_items():
                             "id": "track1",
                             "name": "Song",
                             "artists": [{"name": "Artist"}],
-                            "album": {"name": "Album"},
+                            "album": {
+                                "name": "Album",
+                                "images": [{"url": "https://i.scdn.co/image/recent"}],
+                            },
                             "external_urls": {
                                 "spotify": "https://open.spotify.com/track/track1"
                             },
@@ -59,6 +62,7 @@ def test_recently_played_maps_items():
                 "artists": ["Artist"],
                 "album": "Album",
                 "spotify_url": "https://open.spotify.com/track/track1",
+                "image_url": "https://i.scdn.co/image/recent",
             }
         ]
     }

@@ -7,6 +7,7 @@ from app.spotify.schemas import (
     SpotifyProfile,
     TopArtistItem,
     TopTrackItem,
+    TrackSearchItem,
 )
 
 RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
@@ -14,6 +15,7 @@ ME_URL = "https://api.spotify.com/v1/me"
 CURRENTLY_PLAYING_URL = "https://api.spotify.com/v1/me/player/currently-playing"
 TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks"
 TOP_ARTISTS_URL = "https://api.spotify.com/v1/me/top/artists"
+SEARCH_URL = "https://api.spotify.com/v1/search"
 
 
 def _first_image_url(images: list[dict] | None) -> str | None:
@@ -28,14 +30,16 @@ def map_recently_played(payload: dict) -> list[RecentlyPlayedItem]:
         track = entry.get("track")
         if track is None:
             continue
+        album = track.get("album") or {}
         items.append(
             RecentlyPlayedItem(
                 played_at=entry["played_at"],
                 track_id=track["id"],
                 name=track["name"],
                 artists=[artist["name"] for artist in track.get("artists", [])],
-                album=track["album"]["name"],
+                album=album.get("name") or "",
                 spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
             )
         )
     return items
@@ -52,6 +56,11 @@ def map_me(payload: dict) -> SpotifyProfile:
 
 
 def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
+    is_playing = bool(payload.get("is_playing"))
+    # Paused / stopped: hide the track so Now Playing only shows active playback.
+    if not is_playing:
+        return CurrentlyPlayingResponse(is_playing=False, track=None)
+
     item = payload.get("item")
     if item is None:
         return CurrentlyPlayingResponse(is_playing=False, track=None)
@@ -59,7 +68,7 @@ def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
     if not album or "name" not in album:
         return CurrentlyPlayingResponse(is_playing=False, track=None)
     return CurrentlyPlayingResponse(
-        is_playing=bool(payload.get("is_playing")),
+        is_playing=True,
         track=PlayingTrack(
             track_id=item["id"],
             name=item["name"],
@@ -74,13 +83,15 @@ def map_currently_playing(payload: dict) -> CurrentlyPlayingResponse:
 def map_top_tracks(payload: dict) -> list[TopTrackItem]:
     items: list[TopTrackItem] = []
     for track in payload.get("items", []):
+        album = track.get("album") or {}
         items.append(
             TopTrackItem(
                 track_id=track["id"],
                 name=track["name"],
                 artists=[artist["name"] for artist in track.get("artists", [])],
-                album=track["album"]["name"],
+                album=album.get("name") or "",
                 spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
             )
         )
     return items
@@ -145,4 +156,33 @@ async def fetch_top_artists(
             TOP_ARTISTS_URL,
             params={"limit": limit, "time_range": time_range},
             headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+
+def map_search_tracks(payload: dict) -> list[TrackSearchItem]:
+    items: list[TrackSearchItem] = []
+    for track in payload.get("tracks", {}).get("items", []) or []:
+        if not track or not track.get("id"):
+            continue
+        album = track.get("album") or {}
+        items.append(
+            TrackSearchItem(
+                id=track["id"],
+                name=track["name"],
+                artists=[a["name"] for a in track.get("artists", [])],
+                album=album.get("name") or "",
+                spotify_url=track["external_urls"]["spotify"],
+                image_url=_first_image_url(album.get("images")),
+            )
+        )
+    return items
+
+
+async def fetch_search(access_token: str, q: str, limit: int = 10) -> httpx.Response:
+    async with httpx.AsyncClient() as client:
+        return await client.get(
+            SEARCH_URL,
+            params={"q": q, "type": "track", "limit": limit},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30.0,
         )
