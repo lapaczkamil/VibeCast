@@ -60,6 +60,48 @@ def fetch_popular_page_sync(api_key: str, page: int) -> httpx.Response:
         )
 
 
+def fetch_discover_movie_page_sync(
+    api_key: str,
+    page: int,
+    *,
+    vote_count_gte: int = 200,
+) -> httpx.Response:
+    with httpx.Client(timeout=TMDB_TIMEOUT) as client:
+        return client.get(
+            f"{TMDB_BASE_URL}/discover/movie",
+            params={
+                "api_key": api_key,
+                "language": "en-US",
+                "include_adult": "false",
+                "include_video": "false",
+                "sort_by": "vote_average.desc",
+                "vote_count.gte": vote_count_gte,
+                "page": page,
+            },
+        )
+
+
+async def fetch_discover_movie_page(
+    api_key: str,
+    page: int,
+    *,
+    vote_count_gte: int = 200,
+) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
+        return await client.get(
+            f"{TMDB_BASE_URL}/discover/movie",
+            params={
+                "api_key": api_key,
+                "language": "en-US",
+                "include_adult": "false",
+                "include_video": "false",
+                "sort_by": "vote_average.desc",
+                "vote_count.gte": vote_count_gte,
+                "page": page,
+            },
+        )
+
+
 def fetch_genre_list_sync(api_key: str) -> httpx.Response:
     with httpx.Client(timeout=TMDB_TIMEOUT) as client:
         return client.get(

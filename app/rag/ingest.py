@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import sys
 import time
+from math import ceil
 from typing import Any
+
+import httpx
 
 from app.config import settings
 from app.movies.client import (
     _map_rating,
     _map_year,
+    fetch_discover_movie_page_sync,
     fetch_genre_list_sync,
     fetch_popular_page_sync,
     map_genre_ids,
@@ -19,6 +23,8 @@ from app.rag.store import upsert_movies
 
 BATCH_SIZE = 16
 PAGE_SLEEP_SECONDS = 0.25
+DISCOVER_SHARE = 0.7
+DISCOVER_VOTE_COUNT_GTE = 200
 
 
 def _build_document(
@@ -32,6 +38,76 @@ def _build_document(
     return f"{title}{year_part}\nGenres: {genres_part}\nOverview: {overview}"
 
 
+def _append_from_results(
+    results: list[dict[str, Any]],
+    *,
+    movies: list[dict[str, Any]],
+    seen_ids: set[int],
+    genre_map: dict[int, str],
+    limit: int,
+) -> None:
+    for result in results:
+        if len(movies) >= limit:
+            return
+        movie_id = result.get("id")
+        if movie_id is None or movie_id in seen_ids:
+            continue
+        overview = (result.get("overview") or "").strip()
+        if not overview:
+            continue
+        seen_ids.add(movie_id)
+        movies.append(
+            {
+                "tmdb_id": movie_id,
+                "title": result.get("title") or "Unknown",
+                "year": _map_year(result.get("release_date")),
+                "poster_path": result.get("poster_path"),
+                "rating": _map_rating(result.get("vote_average")),
+                "overview": overview,
+                "genre_names": map_genre_ids(
+                    result.get("genre_ids") or [], genre_map
+                ),
+            }
+        )
+
+
+def _paginate(
+    fetch_page,
+    api_key: str,
+    *,
+    movies: list[dict[str, Any]],
+    seen_ids: set[int],
+    genre_map: dict[int, str],
+    limit: int,
+) -> None:
+    page = 1
+    while len(movies) < limit:
+        response = fetch_page(api_key, page)
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"TMDB page {page} failed: HTTP {response.status_code}"
+            )
+        payload = response.json()
+        results = payload.get("results", [])
+        if not results:
+            break
+        before = len(movies)
+        _append_from_results(
+            results,
+            movies=movies,
+            seen_ids=seen_ids,
+            genre_map=genre_map,
+            limit=limit,
+        )
+        if len(movies) == before:
+            # All results were dupes/empty — still advance; stop at last page
+            pass
+        if page >= payload.get("total_pages", page):
+            break
+        page += 1
+        time.sleep(PAGE_SLEEP_SECONDS)
+
+
 def _collect_movies(
     api_key: str,
     genre_map: dict[int, str],
@@ -39,48 +115,27 @@ def _collect_movies(
 ) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    page = 1
+    discover_target = min(target, ceil(DISCOVER_SHARE * target))
 
-    while len(movies) < target:
-        response = fetch_popular_page_sync(api_key, page)
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"TMDB popular page {page} failed: HTTP {response.status_code}"
-            )
-        payload = response.json()
-        results = payload.get("results", [])
-        if not results:
-            break
+    def discover_fetch(key: str, page: int) -> httpx.Response:
+        return fetch_discover_movie_page_sync(key, page)
 
-        for result in results:
-            movie_id = result.get("id")
-            if movie_id is None or movie_id in seen_ids:
-                continue
-            overview = (result.get("overview") or "").strip()
-            if not overview:
-                continue
-            seen_ids.add(movie_id)
-            movies.append(
-                {
-                    "tmdb_id": movie_id,
-                    "title": result.get("title") or "Unknown",
-                    "year": _map_year(result.get("release_date")),
-                    "poster_path": result.get("poster_path"),
-                    "rating": _map_rating(result.get("vote_average")),
-                    "overview": overview,
-                    "genre_names": map_genre_ids(
-                        result.get("genre_ids") or [], genre_map
-                    ),
-                }
-            )
-            if len(movies) >= target:
-                break
-
-        if page >= payload.get("total_pages", page):
-            break
-        page += 1
-        time.sleep(PAGE_SLEEP_SECONDS)
-
+    _paginate(
+        discover_fetch,
+        api_key,
+        movies=movies,
+        seen_ids=seen_ids,
+        genre_map=genre_map,
+        limit=discover_target,
+    )
+    _paginate(
+        fetch_popular_page_sync,
+        api_key,
+        movies=movies,
+        seen_ids=seen_ids,
+        genre_map=genre_map,
+        limit=target,
+    )
     return movies
 
 
