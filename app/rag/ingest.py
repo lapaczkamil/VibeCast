@@ -19,7 +19,7 @@ from app.movies.client import (
     map_genre_ids,
 )
 from app.rag.ollama_client import embed_texts, ping_ollama_sync
-from app.rag.store import upsert_movies
+from app.rag.store import reset_collection, upsert_movies
 
 BATCH_SIZE = 16
 PAGE_SLEEP_SECONDS = 0.25
@@ -160,7 +160,9 @@ def run_ingest() -> int:
 
     movies = _collect_movies(api_key, genre_map, settings.rag_movie_target)
     if not movies:
-        raise RuntimeError("No movies collected from TMDB popular pages")
+        raise RuntimeError("No movies collected from TMDB discover/popular pages")
+
+    reset_collection()
 
     indexed = 0
     for start in range(0, len(movies), BATCH_SIZE):

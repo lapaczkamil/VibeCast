@@ -69,7 +69,7 @@ source .venv/bin/activate
 python -m app.rag.ingest
 ```
 
-This fetches ~1000 popular TMDB movies into `data/chroma/` (gitignored). Re-running is safe.
+This **rebuilds** `data/chroma/` from a mix of ~70% well-rated TMDB discover movies (`vote_count ≥ 200`) and ~30% popular titles (~`RAG_MOVIE_TARGET`, default 5000). Re-running wipes the previous collection and re-indexes.
 
 Check readiness: [http://127.0.0.1:8000/rag/status](http://127.0.0.1:8000/rag/status) — `index_ready` should be `true` when ingest finished.
 

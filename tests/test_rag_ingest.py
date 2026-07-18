@@ -131,3 +131,45 @@ def test_reset_collection_wipes_and_recreates(tmp_path: Path, monkeypatch):
         embeddings=[[0.3, 0.2, 0.1]],
     )
     assert store_mod.count_movies() == 1
+
+
+def test_run_ingest_resets_collection_before_upsert(monkeypatch):
+    calls: list[str] = []
+
+    monkeypatch.setattr(ingest_mod.settings, "tmdb_api_key", "key")
+    monkeypatch.setattr(ingest_mod, "ping_ollama_sync", lambda: True)
+    monkeypatch.setattr(
+        ingest_mod,
+        "fetch_genre_list_sync",
+        lambda key: httpx.Response(200, json={"genres": [{"id": 18, "name": "Drama"}]}),
+    )
+    monkeypatch.setattr(
+        ingest_mod,
+        "_collect_movies",
+        lambda api_key, genre_map, target: [
+            {
+                "tmdb_id": 1,
+                "title": "One",
+                "year": "2010",
+                "poster_path": "/x.jpg",
+                "rating": 8.0,
+                "overview": "Plot.",
+                "genre_names": ["Drama"],
+            }
+        ],
+    )
+    monkeypatch.setattr(ingest_mod, "embed_texts", lambda docs: [[0.1, 0.2, 0.3] for _ in docs])
+
+    def fake_reset() -> None:
+        calls.append("reset")
+
+    def fake_upsert(*args, **kwargs) -> None:
+        calls.append("upsert")
+
+    monkeypatch.setattr(ingest_mod, "reset_collection", fake_reset)
+    monkeypatch.setattr(ingest_mod, "upsert_movies", fake_upsert)
+
+    indexed = ingest_mod.run_ingest()
+    assert indexed == 1
+    assert calls[0] == "reset"
+    assert "upsert" in calls
