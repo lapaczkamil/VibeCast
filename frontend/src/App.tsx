@@ -11,7 +11,7 @@ import {
 } from "./api";
 import { AppChrome } from "./components/AppChrome";
 import { AlbumConveyor } from "./components/AlbumConveyor";
-import { ListeningDrawer } from "./components/ListeningDrawer";
+import { ListeningPanel } from "./components/ListeningPanel";
 import { RecommendStage } from "./components/RecommendStage";
 import { SearchDrawer } from "./components/SearchDrawer";
 import { AudioMeters } from "./components/AudioMeters";
@@ -67,7 +67,8 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authFetchError, setAuthFetchError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [drawer, setDrawer] = useState<null | "listening" | "search">(null);
+  const [drawer, setDrawer] = useState<null | "search">(null);
+  const [listeningOpen, setListeningOpen] = useState(false);
   const [seedDragging, setSeedDragging] = useState(false);
 
   const [me, setMe] = useState<SectionState<SpotifyProfile>>({
@@ -219,6 +220,7 @@ export default function App() {
       setLoggingOut(false);
       setAuthenticated(false);
       setDrawer(null);
+      setListeningOpen(false);
       setSeedDragging(false);
       setMe({ status: "ok", data: PLACEHOLDER_PROFILE });
       setCurrentlyPlaying({
@@ -242,7 +244,7 @@ export default function App() {
       return next;
     });
     setSeedDragging(false);
-    setDrawer(null);
+    setListeningOpen(false);
   }, []);
 
   const handleSeedDragStart = useCallback((_track: SeedTrack) => {
@@ -290,6 +292,11 @@ export default function App() {
   }, []);
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
+  const closeListening = useCallback(() => setListeningOpen(false), []);
+  const toggleListening = useCallback(
+    () => setListeningOpen((open) => !open),
+    [],
+  );
 
   const refreshCurrentlyPlaying = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -473,6 +480,7 @@ export default function App() {
           "app",
           "app--stage",
           drawer ? "app--drawer-open" : "",
+          listeningOpen ? "app--listening-open" : "",
           seedDragging ? "app--seed-dragging" : "",
         ]
           .filter(Boolean)
@@ -486,36 +494,42 @@ export default function App() {
         currentlyPlaying={currentlyPlaying}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
-        onOpenListening={() => setDrawer("listening")}
+        listeningOpen={listeningOpen}
+        onToggleListening={toggleListening}
         onOpenSearch={() => setDrawer("search")}
       />
-      <main className="shell shell--stage">
-        <RecommendStage
-          drawerOpen={drawer !== null}
-          seedDragging={seedDragging}
-          seeds={seeds}
-          isPlaying={isPlaying}
-          onDropSeed={handleDropSeed}
-          onRemoveSeed={handleRemoveSeed}
-        />
-      </main>
-      <ListeningDrawer
-        open={drawer === "listening"}
-        onClose={closeDrawer}
-        currentlyPlaying={currentlyPlaying}
-        recentlyPlayed={recentlyPlayed}
-        topTracks={topTracks}
-        topTracksRange={topTracksRange}
-        onTopTracksRangeChange={(range) => void handleTopTracksRangeChange(range)}
-        seeds={seeds}
-        onClearSeeds={handleClearSeeds}
-        seedDragging={seedDragging}
-        onSeedDragStart={handleSeedDragStart}
-        onSeedDragEnd={handleSeedDragEnd}
-        onRetryCurrentlyPlaying={() => void refreshCurrentlyPlaying()}
-        onRetryRecentlyPlayed={() => void refreshRecentlyPlayed()}
-        onRetryTopTracks={() => void handleTopTracksRangeChange(topTracksRange)}
+      <button
+        type="button"
+        className="listening-panel-backdrop"
+        aria-label="Close Listening"
+        onClick={closeListening}
       />
+      <div className="stage-workspace">
+        <ListeningPanel
+          currentlyPlaying={currentlyPlaying}
+          recentlyPlayed={recentlyPlayed}
+          topTracks={topTracks}
+          topTracksRange={topTracksRange}
+          onTopTracksRangeChange={(range) => void handleTopTracksRangeChange(range)}
+          seeds={seeds}
+          onClearSeeds={handleClearSeeds}
+          onSeedDragStart={handleSeedDragStart}
+          onSeedDragEnd={handleSeedDragEnd}
+          onRetryCurrentlyPlaying={() => void refreshCurrentlyPlaying()}
+          onRetryRecentlyPlayed={() => void refreshRecentlyPlayed()}
+          onRetryTopTracks={() => void handleTopTracksRangeChange(topTracksRange)}
+        />
+        <main className="shell shell--stage">
+          <RecommendStage
+            drawerOpen={drawer !== null || listeningOpen}
+            seedDragging={seedDragging}
+            seeds={seeds}
+            isPlaying={isPlaying}
+            onDropSeed={handleDropSeed}
+            onRemoveSeed={handleRemoveSeed}
+          />
+        </main>
+      </div>
       <SearchDrawer open={drawer === "search"} onClose={closeDrawer} />
     </div>
   );

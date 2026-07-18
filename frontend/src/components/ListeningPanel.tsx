@@ -148,7 +148,7 @@ export function ListeningPanel(props: ListeningPanelProps) {
   };
 
   return (
-    <aside className="listening-panel" aria-label="Listening">
+    <aside id="listening-panel" className="listening-panel" aria-label="Listening">
       <div className="listening-panel-body">
         <div className="listening-panel-scroll">
           <section className="listening-search" aria-label="Search Spotify tracks">
