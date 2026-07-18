@@ -49,6 +49,8 @@ export function MatchDropZone({
     if (track) onDropSeed(track);
   };
 
+  const replacing = Boolean(selected && over);
+
   return (
     <div
       className={
@@ -56,6 +58,7 @@ export function MatchDropZone({
           "match-zone",
           active ? "match-zone--active" : "",
           over ? "match-zone--over" : "",
+          replacing ? "match-zone--replace" : "",
           disabled ? "match-zone--disabled" : "",
           selected ? "match-zone--filled" : "match-zone--empty",
         ]
@@ -70,7 +73,13 @@ export function MatchDropZone({
       aria-label="Drop one track here to match films"
     >
       <div
-        className={selected ? "vinyl-card vinyl-card--settled" : "vinyl-card vinyl-card--waiting"}
+        className={
+          selected
+            ? replacing
+              ? "vinyl-card vinyl-card--settled vinyl-card--ejecting"
+              : "vinyl-card vinyl-card--settled"
+            : "vinyl-card vinyl-card--waiting"
+        }
         key={selected?.id ?? "empty"}
       >
         {selected?.image_url ? (
