@@ -84,6 +84,8 @@ def _paginate(
     while len(movies) < limit:
         response = fetch_page(api_key, page)
         if response.status_code != 200:
+            if movies:
+                break
             raise RuntimeError(
                 f"TMDB page {page} failed: HTTP {response.status_code}"
             )
@@ -91,7 +93,6 @@ def _paginate(
         results = payload.get("results", [])
         if not results:
             break
-        before = len(movies)
         _append_from_results(
             results,
             movies=movies,
@@ -99,9 +100,6 @@ def _paginate(
             genre_map=genre_map,
             limit=limit,
         )
-        if len(movies) == before:
-            # All results were dupes/empty — still advance; stop at last page
-            pass
         if page >= payload.get("total_pages", page):
             break
         page += 1
@@ -118,7 +116,9 @@ def _collect_movies(
     discover_target = min(target, ceil(DISCOVER_SHARE * target))
 
     def discover_fetch(key: str, page: int) -> httpx.Response:
-        return fetch_discover_movie_page_sync(key, page)
+        return fetch_discover_movie_page_sync(
+            key, page, vote_count_gte=DISCOVER_VOTE_COUNT_GTE
+        )
 
     _paginate(
         discover_fetch,

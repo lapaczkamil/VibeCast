@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from app.rag import ingest as ingest_mod
 from app.rag import store as store_mod
@@ -32,7 +30,7 @@ def _page_response(results: list[dict], page: int = 1, total_pages: int = 1) -> 
 def test_collect_movies_prefers_discover_then_popular(monkeypatch):
     genre_map = {18: "Drama"}
 
-    def fake_discover(api_key: str, page: int) -> httpx.Response:
+    def fake_discover(api_key: str, page: int, **kwargs) -> httpx.Response:
         assert page == 1
         return _page_response(
             [
@@ -42,7 +40,7 @@ def test_collect_movies_prefers_discover_then_popular(monkeypatch):
             ]
         )
 
-    def fake_popular(api_key: str, page: int) -> httpx.Response:
+    def fake_popular(api_key: str, page: int, **kwargs) -> httpx.Response:
         assert page == 1
         return _page_response(
             [
@@ -65,7 +63,7 @@ def test_collect_movies_prefers_discover_then_popular(monkeypatch):
 def test_collect_movies_skips_empty_overview(monkeypatch):
     genre_map: dict[int, str] = {}
 
-    def fake_discover(api_key: str, page: int) -> httpx.Response:
+    def fake_discover(api_key: str, page: int, **kwargs) -> httpx.Response:
         return _page_response(
             [
                 _movie_result(1, "Has Plot"),
@@ -73,7 +71,7 @@ def test_collect_movies_skips_empty_overview(monkeypatch):
             ]
         )
 
-    def fake_popular(api_key: str, page: int) -> httpx.Response:
+    def fake_popular(api_key: str, page: int, **kwargs) -> httpx.Response:
         return _page_response([_movie_result(3, "Popular")])
 
     monkeypatch.setattr(ingest_mod, "fetch_discover_movie_page_sync", fake_discover)
@@ -88,7 +86,7 @@ def test_collect_movies_discover_quota_uses_ceil(monkeypatch):
     genre_map: dict[int, str] = {}
     discover_calls: list[int] = []
 
-    def fake_discover(api_key: str, page: int) -> httpx.Response:
+    def fake_discover(api_key: str, page: int, **kwargs) -> httpx.Response:
         discover_calls.append(page)
         return _page_response(
             [_movie_result(i, f"D{i}") for i in range(1, 6)],
@@ -96,7 +94,7 @@ def test_collect_movies_discover_quota_uses_ceil(monkeypatch):
             total_pages=1,
         )
 
-    def fake_popular(api_key: str, page: int) -> httpx.Response:
+    def fake_popular(api_key: str, page: int, **kwargs) -> httpx.Response:
         return _page_response([_movie_result(100, "P100")])
 
     monkeypatch.setattr(ingest_mod, "fetch_discover_movie_page_sync", fake_discover)
@@ -106,6 +104,69 @@ def test_collect_movies_discover_quota_uses_ceil(monkeypatch):
     assert len(movies) == 5
     assert [m["tmdb_id"] for m in movies[:4]] == [1, 2, 3, 4]
     assert movies[4]["tmdb_id"] == 100
+
+
+def test_collect_stops_on_http_error_if_partial(monkeypatch):
+    genre_map: dict[int, str] = {}
+    pages = {"n": 0}
+
+    def fake_discover(api_key: str, page: int, **kwargs) -> httpx.Response:
+        pages["n"] += 1
+        if pages["n"] == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "page": 1,
+                    "total_pages": 5,
+                    "results": [
+                        {
+                            "id": 1,
+                            "title": "A",
+                            "release_date": "2010-01-01",
+                            "overview": "Plot.",
+                            "poster_path": "/a.jpg",
+                            "vote_average": 8.0,
+                            "genre_ids": [],
+                        },
+                        {
+                            "id": 2,
+                            "title": "B",
+                            "release_date": "2010-01-01",
+                            "overview": "Plot.",
+                            "poster_path": "/b.jpg",
+                            "vote_average": 8.0,
+                            "genre_ids": [],
+                        },
+                    ],
+                },
+            )
+        return httpx.Response(422, json={"status_message": "page too high"})
+
+    def fake_popular(api_key: str, page: int, **kwargs) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "page": 1,
+                "total_pages": 1,
+                "results": [
+                    {
+                        "id": 10,
+                        "title": "P",
+                        "release_date": "2011-01-01",
+                        "overview": "Plot.",
+                        "poster_path": "/p.jpg",
+                        "vote_average": 7.0,
+                        "genre_ids": [],
+                    },
+                ],
+            },
+        )
+
+    monkeypatch.setattr(ingest_mod, "fetch_discover_movie_page_sync", fake_discover)
+    monkeypatch.setattr(ingest_mod, "fetch_popular_page_sync", fake_popular)
+
+    movies = ingest_mod._collect_movies("key", genre_map, target=5)
+    assert [m["tmdb_id"] for m in movies] == [1, 2, 10]
 
 
 def test_reset_collection_wipes_and_recreates(tmp_path: Path, monkeypatch):
