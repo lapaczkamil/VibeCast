@@ -70,6 +70,9 @@ export default function App() {
   const [drawer, setDrawer] = useState<null | "search">(null);
   const [listeningOpen, setListeningOpen] = useState(false);
   const [seedDragging, setSeedDragging] = useState(false);
+  const [narrow, setNarrow] = useState(
+    () => window.matchMedia("(max-width: 899px)").matches,
+  );
 
   const [me, setMe] = useState<SectionState<SpotifyProfile>>({
     status: "ok",
@@ -410,6 +413,22 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [blockedUntil]);
 
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 899px)");
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!listeningOpen || drawer !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setListeningOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [listeningOpen, drawer]);
+
   if (authLoading) {
     return (
       <div className="app">
@@ -518,6 +537,7 @@ export default function App() {
           onRetryCurrentlyPlaying={() => void refreshCurrentlyPlaying()}
           onRetryRecentlyPlayed={() => void refreshRecentlyPlayed()}
           onRetryTopTracks={() => void handleTopTracksRangeChange(topTracksRange)}
+          inert={narrow && !listeningOpen}
         />
         <main className="shell shell--stage">
           <RecommendStage

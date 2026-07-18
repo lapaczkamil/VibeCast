@@ -31,6 +31,8 @@ export type ListeningPanelProps = {
   onRetryCurrentlyPlaying: () => void;
   onRetryRecentlyPlayed: () => void;
   onRetryTopTracks: () => void;
+  /** Mobile overlay closed — remove from tab order and accessibility tree. */
+  inert?: boolean;
 };
 
 function SearchResultRow({
@@ -147,8 +149,15 @@ export function ListeningPanel(props: ListeningPanelProps) {
     setActiveQuery(searchQuery.trim());
   };
 
+  const hidden = props.inert === true;
+
   return (
-    <aside id="listening-panel" className="listening-panel" aria-label="Listening">
+    <aside
+      id="listening-panel"
+      className="listening-panel"
+      aria-label="Listening"
+      {...(hidden ? { inert: true, "aria-hidden": true } : {})}
+    >
       <div className="listening-panel-body">
         <div className="listening-panel-scroll">
           <section className="listening-search" aria-label="Search Spotify tracks">

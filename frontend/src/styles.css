@@ -915,6 +915,10 @@ body::after {
     display: block;
   }
 
+  .app--seed-dragging .listening-panel-backdrop {
+    pointer-events: none;
+  }
+
   .chrome-btn--listening {
     display: inline-flex;
   }
