@@ -20,3 +20,14 @@ class MovieSearchResponse(BaseModel):
     page: int
     total_results: int
     items: list[MovieItem]
+
+
+class MovieDetailResponse(BaseModel):
+    tmdb_id: int
+    title: str
+    year: str | None
+    overview: str
+    tagline: str
+    genres: list[str]
+    runtime: int | None
+    poster_url: str | None

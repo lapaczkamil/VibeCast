@@ -1,6 +1,6 @@
 import httpx
 
-from app.movies.schemas import MovieItem, MovieSearchResponse
+from app.movies.schemas import MovieDetailResponse, MovieItem, MovieSearchResponse
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
@@ -48,7 +48,7 @@ async def fetch_movie(api_key: str, movie_id: int) -> httpx.Response:
     async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
         return await client.get(
             f"{TMDB_BASE_URL}/movie/{movie_id}",
-            params={"api_key": api_key},
+            params={"api_key": api_key, "language": "en-US"},
         )
 
 
@@ -94,6 +94,36 @@ def _map_rating(value: object) -> float | None:
     if rating <= 0:
         return None
     return round(rating, 1)
+
+
+def map_movie_detail(payload: dict) -> MovieDetailResponse:
+    genres = [
+        str(genre["name"])
+        for genre in payload.get("genres") or []
+        if isinstance(genre, dict) and genre.get("name")
+    ]
+    runtime = payload.get("runtime")
+    runtime_minutes: int | None
+    if runtime is None or runtime == "" or runtime == 0:
+        runtime_minutes = None
+    else:
+        try:
+            runtime_minutes = int(runtime)
+        except (TypeError, ValueError):
+            runtime_minutes = None
+        if runtime_minutes is not None and runtime_minutes <= 0:
+            runtime_minutes = None
+
+    return MovieDetailResponse(
+        tmdb_id=int(payload["id"]),
+        title=str(payload.get("title") or "Unknown"),
+        year=_map_year(payload.get("release_date")),
+        overview=(payload.get("overview") or "").strip(),
+        tagline=(payload.get("tagline") or "").strip(),
+        genres=genres,
+        runtime=runtime_minutes,
+        poster_url=_map_poster_url(payload.get("poster_path"), size="w780"),
+    )
 
 
 def map_search_results(payload: dict, query: str, page: int) -> MovieSearchResponse:
