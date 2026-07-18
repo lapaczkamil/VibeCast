@@ -33,8 +33,17 @@ CANDIDATE_METADATAS = [
 
 
 def setup_function() -> None:
+    from app.reccobeats import client as rb_client
+
     oauth.clear_tokens()
     oauth.clear_pending_state()
+    rb_client.clear_audio_features_cache()
+
+
+def _mock_reccobeats_offline() -> None:
+    respx.get("https://api.reccobeats.com/v1/audio-features").mock(
+        return_value=Response(404)
+    )
 
 
 def test_build_mood_query_includes_track_names():
@@ -84,6 +93,7 @@ def test_recommend_ollama_unreachable(monkeypatch):
 @respx.mock
 def test_recommend_happy_path(monkeypatch):
     oauth.set_tokens(TOKENS)
+    _mock_reccobeats_offline()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -144,6 +154,7 @@ def test_recommend_happy_path(monkeypatch):
 @respx.mock
 def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
     oauth.set_tokens(TOKENS)
+    _mock_reccobeats_offline()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -182,6 +193,7 @@ def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
 @respx.mock
 def test_recommend_parse_failure_502(monkeypatch):
     oauth.set_tokens(TOKENS)
+    _mock_reccobeats_offline()
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
@@ -233,6 +245,7 @@ def test_recommend_with_seed_tracks_skips_listening_history(monkeypatch):
     )
 
     with respx.mock:
+        _mock_reccobeats_offline()
         response = client.post(
             "/recommend",
             json={
@@ -331,3 +344,127 @@ def _mock_spotify_context() -> None:
             },
         )
     )
+
+
+@respx.mock
+def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
+    oauth.set_tokens(TOKENS)
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+
+    captured: dict = {}
+
+    def fake_embed(texts):
+        captured["mood"] = texts[0]
+        return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr(
+        "app.rag.recommend.query_movies",
+        lambda embedding, n_results: (
+            [
+                "A\nGenres: Drama\nOverview: a",
+                "B\nGenres: Action, Thriller\nOverview: b",
+            ],
+            [
+                {
+                    "tmdb_id": 1,
+                    "title": "A",
+                    "year": "2000",
+                    "poster_path": "",
+                    "rating": 7.0,
+                },
+                {
+                    "tmdb_id": 2,
+                    "title": "B",
+                    "year": "2001",
+                    "poster_path": "",
+                    "rating": 7.1,
+                },
+            ],
+        ),
+    )
+
+    def fake_chat(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return json.dumps(
+            {
+                "mood_summary": "Intense",
+                "items": [{"tmdb_id": 2, "title": "B", "reason": "energy match"}],
+            }
+        )
+
+    monkeypatch.setattr("app.rag.recommend.chat_json", fake_chat)
+
+    respx.get("https://api.reccobeats.com/v1/audio-features").mock(
+        return_value=Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "energy": 0.95,
+                        "valence": 0.2,
+                        "danceability": 0.3,
+                        "acousticness": 0.1,
+                        "tempo": 140.0,
+                    }
+                ]
+            },
+        )
+    )
+
+    response = client.post(
+        "/recommend",
+        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
+    )
+    assert response.status_code == 200
+    assert "Audio profile:" in captured["mood"]
+    assert (
+        "energy" in captured["mood"].lower()
+        or "intense" in captured["mood"].lower()
+        or "high energy" in captured["mood"].lower()
+    )
+
+
+@respx.mock
+def test_recommend_soft_fails_reccobeats(monkeypatch):
+    oauth.set_tokens(TOKENS)
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+
+    captured: dict = {}
+
+    def fake_embed(texts):
+        captured["mood"] = texts[0]
+        return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr(
+        "app.rag.recommend.query_movies",
+        lambda embedding, n_results: (
+            ["doc1"],
+            [CANDIDATE_METADATAS[0]],
+        ),
+    )
+    monkeypatch.setattr(
+        "app.rag.recommend.chat_json",
+        lambda prompt: json.dumps(
+            {
+                "mood_summary": "Fallback mood",
+                "items": [
+                    {"tmdb_id": 550, "title": "Fight Club", "reason": "still works"},
+                ],
+            }
+        ),
+    )
+
+    respx.get("https://api.reccobeats.com/v1/audio-features").mock(
+        return_value=Response(500, text="nope")
+    )
+
+    response = client.post(
+        "/recommend",
+        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
+    )
+    assert response.status_code == 200
+    assert "Audio profile:" not in captured["mood"]

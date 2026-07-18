@@ -16,6 +16,9 @@ from app.rag.schemas import (
     RecommendTrackSeed,
 )
 from app.rag.store import query_movies
+from app.reccobeats.client import fetch_audio_features
+from app.reccobeats.mood import format_audio_profile
+from app.reccobeats.rerank import rerank_candidates
 from app.spotify.client import (
     fetch_currently_playing,
     fetch_recently_played,
@@ -29,6 +32,7 @@ from app.spotify.client import (
 from app.spotify.routes import _authed_spotify
 
 RAG_TOP_K = 8
+RAG_FETCH_K = 16
 RECENT_LIMIT = 10
 TOP_TRACKS_LIMIT = 5
 TOP_ARTISTS_LIMIT = 5
@@ -254,8 +258,24 @@ async def recommend_for_user(
             )
         mood_query = now_playing_line
 
+    features = None
+    seed_id: str | None = seeds[0].id if seeds else None
+    if seed_id:
+        features = await fetch_audio_features(seed_id)
+    if features is not None:
+        profile = format_audio_profile(features)
+        if profile:
+            mood_query = f"{mood_query}\nAudio profile: {profile}"
+
     embedding = embed_texts([mood_query])[0]
-    documents, metadatas = query_movies(embedding, RAG_TOP_K)
+    fetch_k = RAG_FETCH_K if features is not None else RAG_TOP_K
+    documents, metadatas = query_movies(embedding, fetch_k)
+    if features is not None and documents:
+        documents, metadatas = rerank_candidates(
+            documents, metadatas, features, keep=RAG_TOP_K
+        )
+    else:
+        documents, metadatas = documents[:RAG_TOP_K], metadatas[:RAG_TOP_K]
 
     prompt = _build_recommendation_prompt(mood_query, documents, metadatas)
     raw = chat_json(prompt)
