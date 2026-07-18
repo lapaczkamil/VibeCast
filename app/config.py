@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     rag_collection: str = "movies"
     rag_movie_target: int = 1000
     rag_chroma_path: str = "data/chroma"
+    reccobeats_base_url: str = "https://api.reccobeats.com"
+    reccobeats_timeout_seconds: float = 4.0
 
 
 @lru_cache
