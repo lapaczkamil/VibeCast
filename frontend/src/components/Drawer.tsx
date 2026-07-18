@@ -5,10 +5,6 @@ type DrawerProps = {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  /** When true, backdrop lets pointer events through so drops hit the stage. */
-  passThroughBackdrop?: boolean;
-  /** Soft/clear dim so the stage stays visible as a drop target (Listening). */
-  softBackdrop?: boolean;
 };
 
 export function Drawer({
@@ -16,8 +12,6 @@ export function Drawer({
   open,
   onClose,
   children,
-  passThroughBackdrop = false,
-  softBackdrop = false,
 }: DrawerProps) {
   useEffect(() => {
     if (!open) return;
@@ -40,24 +34,12 @@ export function Drawer({
   if (!open) return null;
 
   return (
-    <div
-      className={
-        [
-          "drawer-root",
-          softBackdrop ? "drawer-root--soft-backdrop" : "",
-          passThroughBackdrop ? "drawer-root--pass-through" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")
-      }
-      role="presentation"
-    >
+    <div className="drawer-root" role="presentation">
       <button
         type="button"
         className="drawer-backdrop"
         aria-label="Close panel"
         onClick={onClose}
-        tabIndex={passThroughBackdrop ? -1 : 0}
       />
       <aside
         className="drawer-sheet"

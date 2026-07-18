@@ -792,38 +792,8 @@ body::after {
   min-height: 0;
 }
 
-.drawer-body:has(.listening-drawer) {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0;
-}
-
-.listening-drawer .dashboard-section {
-  margin-bottom: 1.25rem;
-}
-
-/* Skip staggered enter animations when mounting the drawer — big open-cost. */
-.listening-drawer .now-playing,
-.listening-drawer .track-item,
-.listening-drawer .artist-item,
 .drawer-body .movie-item {
   animation: none;
-}
-
-.listening-drawer {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-}
-
-.listening-drawer-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 1rem 1.1rem;
 }
 
 /* --- Listening panel (built-in nav) --- */
@@ -1168,13 +1138,6 @@ body::after {
 .seed-chip-remove:hover {
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-.listening-drawer .section-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-muted);
 }
 
 .top-range-filters {
@@ -2233,24 +2196,6 @@ body::after {
 }
 
 /* --- Seed drag + match zone --- */
-
-/* Listening: keep the match stage readable — no heavy modal veil. */
-.drawer-root--soft-backdrop .drawer-backdrop {
-  background: transparent;
-}
-
-.drawer-root--pass-through {
-  pointer-events: none;
-}
-
-.drawer-root--pass-through .drawer-sheet {
-  pointer-events: auto;
-}
-
-.drawer-root--pass-through .drawer-backdrop {
-  pointer-events: none;
-  opacity: 0;
-}
 
 .app--seed-dragging .match-zone {
   position: relative;

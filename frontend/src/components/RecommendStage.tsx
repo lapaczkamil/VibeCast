@@ -215,7 +215,7 @@ export function RecommendStage({
             <p className="stage-eyebrow">Music → Movie</p>
             <h2 className="stage-heading">Match a film to one track</h2>
             <p className="stage-lede">
-              Open Listening and drop one track onto the slot.
+              Drag a track from Listening onto the slot.
             </p>
           </header>
         ) : (
