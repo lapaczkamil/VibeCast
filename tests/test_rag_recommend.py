@@ -359,31 +359,33 @@ def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
         return [[0.1, 0.2, 0.3]]
 
     monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
-    monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda embedding, n_results: (
-            [
-                "A\nGenres: Drama\nOverview: a",
-                "B\nGenres: Action, Thriller\nOverview: b",
-            ],
-            [
-                {
-                    "tmdb_id": 1,
-                    "title": "A",
-                    "year": "2000",
-                    "poster_path": "",
-                    "rating": 7.0,
-                },
-                {
-                    "tmdb_id": 2,
-                    "title": "B",
-                    "year": "2001",
-                    "poster_path": "",
-                    "rating": 7.1,
-                },
-            ],
-        ),
-    )
+
+    docs = [
+        "A\nGenres: Drama\nOverview: a",
+        "B\nGenres: Action, Thriller\nOverview: b",
+    ]
+    metas = [
+        {
+            "tmdb_id": 1,
+            "title": "A",
+            "year": "2000",
+            "poster_path": "",
+            "rating": 7.0,
+        },
+        {
+            "tmdb_id": 2,
+            "title": "B",
+            "year": "2001",
+            "poster_path": "",
+            "rating": 7.1,
+        },
+    ]
+
+    def fake_query(embedding, n_results):
+        captured["n_results"] = n_results
+        return (docs, metas)
+
+    monkeypatch.setattr("app.rag.recommend.query_movies", fake_query)
 
     def fake_chat(prompt: str) -> str:
         captured["prompt"] = prompt
@@ -424,6 +426,8 @@ def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
         or "intense" in captured["mood"].lower()
         or "high energy" in captured["mood"].lower()
     )
+    assert captured["n_results"] == 16
+    assert captured["prompt"].index("tmdb_id=2") < captured["prompt"].index("tmdb_id=1")
 
 
 @respx.mock
@@ -439,13 +443,12 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
         return [[0.1, 0.2, 0.3]]
 
     monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
-    monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda embedding, n_results: (
-            ["doc1"],
-            [CANDIDATE_METADATAS[0]],
-        ),
-    )
+
+    def fake_query(embedding, n_results):
+        captured["n_results"] = n_results
+        return (["doc1"], [CANDIDATE_METADATAS[0]])
+
+    monkeypatch.setattr("app.rag.recommend.query_movies", fake_query)
     monkeypatch.setattr(
         "app.rag.recommend.chat_json",
         lambda prompt: json.dumps(
@@ -468,3 +471,4 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
     )
     assert response.status_code == 200
     assert "Audio profile:" not in captured["mood"]
+    assert captured["n_results"] == 8
