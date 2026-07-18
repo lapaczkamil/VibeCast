@@ -16,6 +16,7 @@ class RecommendMovieItem(BaseModel):
     poster_url: str | None = None
     rating: float | None = None
     reason: str
+    overview: str = ""
 
 
 class RecommendResponse(BaseModel):

@@ -59,12 +59,12 @@ def test_build_mood_query_includes_track_names():
     assert "Top1" in text and "ArtistA" in text
 
 
-def test_parse_recommendation_json_extracts_items():
-    from app.rag.recommend import parse_recommendation_json
+def test_overview_from_document():
+    from app.rag.recommend import overview_from_document
 
-    raw = '{"items":[{"tmdb_id":1,"title":"X","reason":"y"}]}'
-    items = parse_recommendation_json(raw)
-    assert items[0]["tmdb_id"] == 1
+    doc = "Title (2000)\nGenres: Drama\nOverview: A quiet story about loss."
+    assert overview_from_document(doc) == "A quiet story about loss."
+    assert overview_from_document("no overview here") == ""
 
 
 def test_recommend_unauthorized():
@@ -102,7 +102,10 @@ def test_recommend_happy_path(monkeypatch):
     monkeypatch.setattr(
         "app.rag.recommend.query_movies",
         lambda embedding, n_results: (
-            ["doc1", "doc2"],
+            [
+                "Fight Club (1999)\nGenres: Drama\nOverview: An insomniac office worker forms an underground fight club.",
+                "Inception (2010)\nGenres: Science Fiction\nOverview: A thief who steals corporate secrets through dream-sharing.",
+            ],
             CANDIDATE_METADATAS,
         ),
     )
@@ -148,7 +151,9 @@ def test_recommend_happy_path(monkeypatch):
         == "https://image.tmdb.org/t/p/w780/poster.jpg"
     )
     assert body["items"][0]["reason"] == "Matches your edgy top tracks"
+    assert "fight club" in body["items"][0]["overview"].lower()
     assert body["items"][1]["poster_url"] is None
+    assert "dream" in body["items"][1]["overview"].lower()
 
 
 @respx.mock

@@ -84,6 +84,17 @@ export type MovieItem = {
   rating: number | null;
 };
 
+export type MovieDetail = {
+  tmdb_id: number;
+  title: string;
+  year: string | null;
+  overview: string;
+  tagline: string;
+  genres: string[];
+  runtime: number | null;
+  poster_url: string | null;
+};
+
 export type MovieSearchResponse = {
   query: string;
   page: number;
@@ -106,6 +117,7 @@ export type RecommendMovieItem = {
   poster_url: string | null;
   rating: number | null;
   reason: string;
+  overview?: string;
 };
 
 export type RecommendResponse = {

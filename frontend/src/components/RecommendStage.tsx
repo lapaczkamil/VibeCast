@@ -9,6 +9,10 @@ import {
 import { tmdbPosterUrl } from "../lib/tmdbPoster";
 import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
 import { MatchDropZone } from "./MatchDropZone";
+import {
+  MovieOverviewLightbox,
+  PosterHotspot,
+} from "./MovieOverviewLightbox";
 import { RecommendLoading } from "./RecommendLoading";
 import { TmdbLogo } from "./TmdbLogo";
 
@@ -57,6 +61,7 @@ export function RecommendStage({
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loadingLine, setLoadingLine] = useState(0);
+  const [overviewOpen, setOverviewOpen] = useState(false);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -69,6 +74,10 @@ export function RecommendStage({
         setStatusError("Could not load recommendation status.");
       });
   }, []);
+
+  useEffect(() => {
+    setOverviewOpen(false);
+  }, [activeIndex, phase]);
 
   useEffect(() => {
     if (phase !== "loading") return;
@@ -321,7 +330,35 @@ export function RecommendStage({
                         className={`stage-stack-card stage-stack-card--${role}`}
                         aria-hidden={role !== "current"}
                       >
-                        {poster ? (
+                        {role === "current" ? (
+                          <PosterHotspot
+                            label={`View overview for ${movie.title}`}
+                            onOpen={() => setOverviewOpen(true)}
+                          >
+                            {poster ? (
+                              <img
+                                className="stage-poster"
+                                src={poster}
+                                srcSet={posterSrcSet}
+                                sizes="(max-width: 640px) 55vw, 22rem"
+                                alt=""
+                                width={390}
+                                height={585}
+                                draggable={false}
+                                crossOrigin="anonymous"
+                                loading="eager"
+                                decoding="async"
+                              />
+                            ) : (
+                              <div
+                                className="stage-poster stage-poster--placeholder"
+                                aria-hidden="true"
+                              >
+                                ?
+                              </div>
+                            )}
+                          </PosterHotspot>
+                        ) : poster ? (
                           <img
                             className="stage-poster"
                             src={poster}
@@ -332,7 +369,7 @@ export function RecommendStage({
                             height={585}
                             draggable={false}
                             crossOrigin="anonymous"
-                            loading={role === "current" ? "eager" : "lazy"}
+                            loading="lazy"
                             decoding="async"
                           />
                         ) : (
@@ -407,6 +444,13 @@ export function RecommendStage({
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {overviewOpen && activeMovie ? (
+          <MovieOverviewLightbox
+            movie={activeMovie}
+            onClose={() => setOverviewOpen(false)}
+          />
         ) : null}
 
         <button

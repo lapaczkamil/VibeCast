@@ -171,15 +171,32 @@ async def _gather_spotify_lines() -> tuple[str | None, list[str], list[str], lis
     return now_playing_line, recent_lines, top_track_lines, top_artist_lines
 
 
+def overview_from_document(document: str) -> str:
+    """Extract TMDB overview text from a Chroma movie document."""
+    lines = document.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("Overview:"):
+            first = line.removeprefix("Overview:").strip()
+            rest = "\n".join(lines[index + 1 :]).strip()
+            parts = [part for part in (first, rest) if part]
+            return "\n".join(parts).strip()
+    return ""
+
+
 def _map_validated_items(
     llm_items: list[dict[str, Any]],
+    documents: list[str],
     metadatas: list[dict[str, Any]],
 ) -> list[RecommendMovieItem]:
     candidates_by_id: dict[int, dict[str, Any]] = {}
-    for metadata in metadatas:
+    overview_by_id: dict[int, str] = {}
+    for document, metadata in zip(documents, metadatas, strict=True):
         tmdb_id = metadata.get("tmdb_id")
-        if tmdb_id is not None:
-            candidates_by_id[int(tmdb_id)] = metadata
+        if tmdb_id is None:
+            continue
+        key = int(tmdb_id)
+        candidates_by_id[key] = metadata
+        overview_by_id[key] = overview_from_document(document)
 
     validated: list[RecommendMovieItem] = []
     for item in llm_items:
@@ -200,6 +217,7 @@ def _map_validated_items(
                 poster_url=_map_poster_url(meta.get("poster_path"), size="w780"),
                 rating=_map_rating(meta.get("rating")),
                 reason=str(item.get("reason") or ""),
+                overview=overview_by_id.get(int(tmdb_id), ""),
             )
         )
     return validated
@@ -287,7 +305,7 @@ async def recommend_for_user(
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise RecommendationParseError() from exc
 
-    items = _map_validated_items(llm_items, metadatas)
+    items = _map_validated_items(llm_items, documents, metadatas)
     items = await _enrich_missing_ratings(items)
     return RecommendResponse(
         mood_summary=mood_summary,

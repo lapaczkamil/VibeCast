@@ -1,6 +1,7 @@
 import type {
   AuthStatus,
   CurrentlyPlayingResponse,
+  MovieDetail,
   MovieSearchResponse,
   MoviesStatus,
   RagStatus,
@@ -164,6 +165,36 @@ export async function fetchMoviesStatus(): Promise<MoviesStatus> {
     throw new Error("Failed to load movies status");
   }
   return res.json();
+}
+
+const movieDetailCache = new Map<number, MovieDetail>();
+
+export async function fetchMovieDetail(tmdbId: number): Promise<MovieDetail> {
+  const cached = movieDetailCache.get(tmdbId);
+  if (cached) return cached;
+
+  const res = await fetch(`/api/movies/${tmdbId}`);
+  if (!res.ok) {
+    if (res.status === 503) {
+      throw new Error(
+        await errorMessageFromResponse(res, "TMDB API key not configured"),
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(await errorMessageFromResponse(res, "Movie not found"));
+    }
+    if (res.status === 502) {
+      throw new Error(
+        await errorMessageFromResponse(res, "TMDB API request failed"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Failed to load movie details"),
+    );
+  }
+  const detail = (await res.json()) as MovieDetail;
+  movieDetailCache.set(tmdbId, detail);
+  return detail;
 }
 
 export async function searchMovies(
