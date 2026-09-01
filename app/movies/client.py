@@ -60,11 +60,21 @@ def fetch_popular_page_sync(api_key: str, page: int) -> httpx.Response:
         )
 
 
+def fetch_movie_detail_sync(api_key: str, movie_id: int) -> httpx.Response:
+    """Movie detail with keywords folded in, so enrichment costs one call."""
+    with httpx.Client(timeout=TMDB_TIMEOUT) as client:
+        return client.get(
+            f"{TMDB_BASE_URL}/movie/{movie_id}",
+            params={"api_key": api_key, "append_to_response": "keywords"},
+        )
+
+
 def fetch_discover_movie_page_sync(
     api_key: str,
     page: int,
     *,
     vote_count_gte: int = 200,
+    vote_average_gte: float | None = None,
 ) -> httpx.Response:
     with httpx.Client(timeout=TMDB_TIMEOUT) as client:
         return client.get(
@@ -76,6 +86,11 @@ def fetch_discover_movie_page_sync(
                 "include_video": "false",
                 "sort_by": "vote_average.desc",
                 "vote_count.gte": vote_count_gte,
+                **(
+                    {"vote_average.gte": vote_average_gte}
+                    if vote_average_gte is not None
+                    else {}
+                ),
                 "page": page,
             },
         )
@@ -86,6 +101,7 @@ async def fetch_discover_movie_page(
     page: int,
     *,
     vote_count_gte: int = 200,
+    vote_average_gte: float | None = None,
 ) -> httpx.Response:
     async with httpx.AsyncClient(timeout=TMDB_TIMEOUT) as client:
         return await client.get(
@@ -97,6 +113,11 @@ async def fetch_discover_movie_page(
                 "include_video": "false",
                 "sort_by": "vote_average.desc",
                 "vote_count.gte": vote_count_gte,
+                **(
+                    {"vote_average.gte": vote_average_gte}
+                    if vote_average_gte is not None
+                    else {}
+                ),
                 "page": page,
             },
         )

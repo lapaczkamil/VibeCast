@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from math import ceil
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.movies.client import (
     _map_year,
     fetch_discover_movie_page_sync,
     fetch_genre_list_sync,
+    fetch_movie_detail_sync,
     fetch_popular_page_sync,
     map_genre_ids,
 )
@@ -23,8 +25,10 @@ from app.rag.store import reset_collection, upsert_movies
 
 BATCH_SIZE = 16
 PAGE_SLEEP_SECONDS = 0.25
-DISCOVER_SHARE = 0.7
-DISCOVER_VOTE_COUNT_GTE = 200
+# Ingest filters live in Settings; see RAG_MIN_RATING and friends in .env.
+
+
+MAX_KEYWORDS = 12
 
 
 def _build_document(
@@ -32,10 +36,51 @@ def _build_document(
     year: str | None,
     genre_names: list[str],
     overview: str,
+    keywords: list[str] | None = None,
+    tagline: str = "",
 ) -> str:
+    """Overview stays last: overview_from_document() reads to end of text."""
     year_part = f" ({year})" if year else ""
     genres_part = ", ".join(genre_names) if genre_names else "Unknown"
-    return f"{title}{year_part}\nGenres: {genres_part}\nOverview: {overview}"
+    lines = [f"{title}{year_part}", f"Genres: {genres_part}"]
+    if keywords:
+        lines.append("Keywords: " + ", ".join(keywords[:MAX_KEYWORDS]))
+    if tagline:
+        lines.append(f"Tagline: {tagline}")
+    lines.append(f"Overview: {overview}")
+    return "\n".join(lines)
+
+
+def parse_enrichment(payload: dict[str, Any]) -> tuple[list[str], str]:
+    """Tagline and keyword names from a detail payload, tolerant of gaps."""
+    keywords_block = payload.get("keywords") or {}
+    raw_keywords = keywords_block.get("keywords") or []
+    keywords = [
+        str(item.get("name") or "").strip()
+        for item in raw_keywords
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ]
+    return keywords, str(payload.get("tagline") or "").strip()
+
+
+def _fetch_enrichment(
+    api_key: str,
+    movie_ids: list[int],
+) -> dict[int, tuple[list[str], str]]:
+    """Keywords and taglines for every movie; failures degrade to nothing."""
+
+    def fetch_one(movie_id: int) -> tuple[int, tuple[list[str], str]]:
+        try:
+            response = fetch_movie_detail_sync(api_key, movie_id)
+            if response.status_code != 200:
+                return movie_id, ([], "")
+            return movie_id, parse_enrichment(response.json())
+        except Exception:
+            return movie_id, ([], "")
+
+    workers = max(1, settings.rag_enrich_workers)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return dict(pool.map(fetch_one, movie_ids))
 
 
 def _append_from_results(
@@ -55,6 +100,11 @@ def _append_from_results(
         overview = (result.get("overview") or "").strip()
         if not overview:
             continue
+        rating = _map_rating(result.get("vote_average"))
+        # None covers unrated titles: /popular carries no filters of its own,
+        # so this is the only gate both sources pass through.
+        if rating is None or rating < settings.rag_min_rating:
+            continue
         seen_ids.add(movie_id)
         movies.append(
             {
@@ -62,7 +112,7 @@ def _append_from_results(
                 "title": result.get("title") or "Unknown",
                 "year": _map_year(result.get("release_date")),
                 "poster_path": result.get("poster_path"),
-                "rating": _map_rating(result.get("vote_average")),
+                "rating": rating,
                 "overview": overview,
                 "genre_names": map_genre_ids(
                     result.get("genre_ids") or [], genre_map
@@ -113,11 +163,14 @@ def _collect_movies(
 ) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    discover_target = min(target, ceil(DISCOVER_SHARE * target))
+    discover_target = min(target, ceil(settings.rag_discover_share * target))
 
     def discover_fetch(key: str, page: int) -> httpx.Response:
         return fetch_discover_movie_page_sync(
-            key, page, vote_count_gte=DISCOVER_VOTE_COUNT_GTE
+            key,
+            page,
+            vote_count_gte=settings.rag_discover_vote_count_gte,
+            vote_average_gte=settings.rag_min_rating,
         )
 
     _paginate(
@@ -162,6 +215,13 @@ def run_ingest() -> int:
     if not movies:
         raise RuntimeError("No movies collected from TMDB discover/popular pages")
 
+    enrichment: dict[int, tuple[list[str], str]] = {}
+    if settings.rag_enrich_documents:
+        print(f"Fetching keywords and taglines for {len(movies)} movies...")
+        enrichment = _fetch_enrichment(
+            api_key, [movie["tmdb_id"] for movie in movies]
+        )
+
     reset_collection()
 
     indexed = 0
@@ -174,6 +234,7 @@ def run_ingest() -> int:
                 movie["year"],
                 movie["genre_names"],
                 movie["overview"],
+                *enrichment.get(movie["tmdb_id"], ([], "")),
             )
             for movie in batch
         ]

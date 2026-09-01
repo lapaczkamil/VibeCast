@@ -33,6 +33,12 @@ def upsert_movies(
     )
 
 
+def get_all_documents() -> tuple[list[str], list[dict[str, Any]]]:
+    """Every indexed document, for building the lexical index."""
+    result = get_collection().get(include=["documents", "metadatas"])
+    return result.get("documents") or [], result.get("metadatas") or []
+
+
 def query_movies(
     embedding: list[float],
     n_results: int,

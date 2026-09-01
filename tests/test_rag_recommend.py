@@ -100,8 +100,8 @@ def test_recommend_happy_path(monkeypatch):
         "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda embedding, n_results: (
+        "app.rag.recommend.hybrid_search",
+        lambda mood_query, embedding, n_results: (
             [
                 "Fight Club (1999)\nGenres: Drama\nOverview: An insomniac office worker forms an underground fight club.",
                 "Inception (2010)\nGenres: Science Fiction\nOverview: A thief who steals corporate secrets through dream-sharing.",
@@ -166,8 +166,8 @@ def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
         "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda embedding, n_results: (["doc1"], [CANDIDATE_METADATAS[0]]),
+        "app.rag.recommend.hybrid_search",
+        lambda mood_query, embedding, n_results: (["doc1"], [CANDIDATE_METADATAS[0]]),
     )
     monkeypatch.setattr(
         "app.rag.recommend.chat_json",
@@ -205,8 +205,8 @@ def test_recommend_parse_failure_502(monkeypatch):
         "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda embedding, n_results: (["doc1"], [CANDIDATE_METADATAS[0]]),
+        "app.rag.recommend.hybrid_search",
+        lambda mood_query, embedding, n_results: (["doc1"], [CANDIDATE_METADATAS[0]]),
     )
     monkeypatch.setattr("app.rag.recommend.chat_json", lambda prompt: "not json")
 
@@ -236,8 +236,8 @@ def test_recommend_with_seed_tracks_skips_listening_history(monkeypatch):
 
     monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
     monkeypatch.setattr(
-        "app.rag.recommend.query_movies",
-        lambda emb, k: (["doc"], CANDIDATE_METADATAS[:1]),
+        "app.rag.recommend.hybrid_search",
+        lambda mood_query, emb, k: (["doc"], CANDIDATE_METADATAS[:1]),
     )
     monkeypatch.setattr(
         "app.rag.recommend.chat_json",
@@ -386,11 +386,11 @@ def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
         },
     ]
 
-    def fake_query(embedding, n_results):
+    def fake_query(mood_query, embedding, n_results):
         captured["n_results"] = n_results
         return (docs, metas)
 
-    monkeypatch.setattr("app.rag.recommend.query_movies", fake_query)
+    monkeypatch.setattr("app.rag.recommend.hybrid_search", fake_query)
 
     def fake_chat(prompt: str) -> str:
         captured["prompt"] = prompt
@@ -449,11 +449,11 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
 
     monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
 
-    def fake_query(embedding, n_results):
+    def fake_query(mood_query, embedding, n_results):
         captured["n_results"] = n_results
         return (["doc1"], [CANDIDATE_METADATAS[0]])
 
-    monkeypatch.setattr("app.rag.recommend.query_movies", fake_query)
+    monkeypatch.setattr("app.rag.recommend.hybrid_search", fake_query)
     monkeypatch.setattr(
         "app.rag.recommend.chat_json",
         lambda prompt: json.dumps(
@@ -480,42 +480,59 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
 
 
 @respx.mock
-def test_recommend_mood_context_returns_match_signals(monkeypatch):
-    oauth.set_tokens(TOKENS)
+def test_recommend_retrieves_with_the_hypothetical_document(monkeypatch):
+    """The rewrite, not the raw mood, is what reaches the index."""
+    from app.rag.hyde import Hypothetical
 
-    respx.get("https://api.reccobeats.com/v1/audio-features").mock(
-        return_value=Response(
-            200,
-            json={
-                "content": [
-                    {
-                        "energy": 0.95,
-                        "valence": 0.5,
-                        "danceability": 0.3,
-                        "acousticness": 0.1,
-                        "tempo": 140.0,
-                    }
-                ]
-            },
-        )
+    oauth.set_tokens(TOKENS)
+    monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
+    monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
+
+    captured: dict = {}
+
+    async def fake_lyrics(track_name, artists):
+        captured["lyrics_args"] = (track_name, artists)
+        return "driving through the city at night"
+
+    monkeypatch.setattr("app.rag.recommend.fetch_lyrics", fake_lyrics)
+    monkeypatch.setattr(
+        "app.rag.recommend.hypothetical_document",
+        lambda mood, lyrics=None: (
+            captured.setdefault("lyrics", lyrics),
+            Hypothetical(
+                query="Genres: Crime\nOverview: A courier drives at night.",
+                mood_summary="neon melancholy",
+                generated=True,
+            ),
+        )[1],
+    )
+
+    def fake_embed(text):
+        captured["embedded"] = text
+        return [0.1, 0.2, 0.3]
+
+    monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
+    monkeypatch.setattr(
+        "app.rag.recommend.hybrid_search",
+        lambda mood_query, embedding, k: (
+            captured.setdefault("retrieval_query", mood_query),
+            (["doc"], CANDIDATE_METADATAS[:1]),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "app.rag.recommend.chat_json",
+        lambda prompt: json.dumps({"mood_summary": "", "items": []}),
     )
 
     response = client.post(
-        "/recommend/mood-context",
-        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
+        "/recommend",
+        json={"tracks": [{"id": "seed1", "name": "Nightcall", "artists": ["Kavinsky"]}]},
     )
     assert response.status_code == 200
-    body = response.json()
-    assert body["track_line"] == "Loud by X"
-    assert "Selected tracks: Loud by X" in body["mood_query"]
-    assert body["audio_profile"]
-    assert body["rerank_enabled"] is True
-    assert "Audio profile:" in body["mood_query"]
-
-
-def test_recommend_mood_context_requires_auth():
-    response = client.post(
-        "/recommend/mood-context",
-        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
-    )
-    assert response.status_code == 401
+    assert captured["embedded"].startswith("Genres: Crime")
+    assert captured["retrieval_query"].startswith("Genres: Crime")
+    # An empty summary from the selector falls back to the rewrite's own.
+    assert response.json()["mood_summary"] == "neon melancholy"
+    # The lyrics are looked up for the seed track and handed to the rewrite.
+    assert captured["lyrics_args"] == ("Nightcall", ["Kavinsky"])
+    assert captured["lyrics"] == "driving through the city at night"

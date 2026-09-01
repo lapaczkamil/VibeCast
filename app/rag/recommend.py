@@ -12,12 +12,13 @@ from app.movies.client import _map_poster_url, _map_rating, fetch_movie
 from app.rag.ollama_client import chat_json, embed_query
 from app.rag.schemas import (
     RecommendMovieItem,
-    RecommendMoodContextResponse,
     RecommendRequest,
     RecommendResponse,
     RecommendTrackSeed,
 )
-from app.rag.store import query_movies
+from app.lyrics.client import fetch_lyrics
+from app.rag.hybrid import hybrid_search
+from app.rag.hyde import hypothetical_document
 from app.reccobeats.client import fetch_audio_features
 from app.reccobeats.mood import format_audio_profile
 from app.reccobeats.rerank import rerank_candidates
@@ -52,6 +53,7 @@ class _MoodResolution:
     track_line: str
     audio_profile: str | None
     features: AudioFeatures | None
+    lyrics: str | None = None
 
 
 def build_mood_query(
@@ -276,10 +278,12 @@ async def _resolve_mood(
         raise HTTPException(status_code=422, detail="At most 1 track allowed")
 
     seeds = _normalize_seeds(request.tracks)
+    lyrics: str | None = None
     if seeds:
         mood_query = _build_mood_from_seeds(seeds)
         track_line = _track_line(seeds[0].name, seeds[0].artists)
         seed_id = seeds[0].id
+        lyrics = await fetch_lyrics(seeds[0].name, seeds[0].artists)
     else:
         now_playing_line = await _now_playing_line_only()
         if not now_playing_line:
@@ -307,18 +311,7 @@ async def _resolve_mood(
         track_line=track_line,
         audio_profile=audio_profile,
         features=features,
-    )
-
-
-async def build_mood_context(
-    request: RecommendRequest | None = None,
-) -> RecommendMoodContextResponse:
-    resolved = await _resolve_mood(request)
-    return RecommendMoodContextResponse(
-        track_line=resolved.track_line,
-        mood_query=resolved.mood_query,
-        audio_profile=resolved.audio_profile,
-        rerank_enabled=resolved.features is not None,
+        lyrics=lyrics,
     )
 
 
@@ -329,9 +322,13 @@ async def recommend_for_user(
     mood_query = resolved.mood_query
     features = resolved.features
 
-    embedding = embed_query(mood_query)
+    # Retrieve with a movie-shaped rewrite of the mood; the raw mood is written
+    # in the language of songs and pulls documentaries about music instead.
+    hypothetical = hypothetical_document(mood_query, resolved.lyrics)
+    retrieval_query = hypothetical.query
+    embedding = embed_query(retrieval_query)
     fetch_k = RAG_FETCH_K if features is not None else RAG_TOP_K
-    documents, metadatas = query_movies(embedding, fetch_k)
+    documents, metadatas = hybrid_search(retrieval_query, embedding, fetch_k)
     if features is not None and documents:
         documents, metadatas = rerank_candidates(
             documents, metadatas, features, keep=RAG_TOP_K
@@ -344,7 +341,7 @@ async def recommend_for_user(
 
     try:
         parsed = json.loads(raw)
-        mood_summary = str(parsed.get("mood_summary") or "")
+        mood_summary = str(parsed.get("mood_summary") or hypothetical.mood_summary)
         llm_items = parse_recommendation_json(raw)
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise RecommendationParseError() from exc

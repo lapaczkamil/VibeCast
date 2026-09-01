@@ -7,6 +7,8 @@ class RagStatusResponse(BaseModel):
     ollama_reachable: bool
     embed_model: str
     chat_model: str
+    hybrid_enabled: bool = False
+    bm25_documents: int = 0
 
 
 class RecommendMovieItem(BaseModel):
@@ -22,13 +24,6 @@ class RecommendMovieItem(BaseModel):
 class RecommendResponse(BaseModel):
     mood_summary: str
     items: list[RecommendMovieItem]
-
-
-class RecommendMoodContextResponse(BaseModel):
-    track_line: str
-    mood_query: str
-    audio_profile: str | None = None
-    rerank_enabled: bool = False
 
 
 class RecommendTrackSeed(BaseModel):

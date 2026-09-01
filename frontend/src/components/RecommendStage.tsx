@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchMoodContext, fetchRagStatus, requestRecommendations } from "../api";
+import { fetchRagStatus, requestRecommendations } from "../api";
 import { nextIndex, prevIndex } from "../lib/carouselIndex";
 import {
   applyPosterPalette,
@@ -7,14 +7,13 @@ import {
   extractPosterPalette,
 } from "../lib/posterPalette";
 import { tmdbPosterUrl } from "../lib/tmdbPoster";
-import type { RagStatus, RecommendMoodContext, RecommendResponse, SeedTrack } from "../types";
+import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
 import { MatchDropZone } from "./MatchDropZone";
 import {
   MovieOverviewLightbox,
   PosterHotspot,
 } from "./MovieOverviewLightbox";
 import { RecommendLoading } from "./RecommendLoading";
-import { SeedMatchSignals } from "./SeedMatchSignals";
 import { TmdbLogo } from "./TmdbLogo";
 
 type RecommendPhase = "idle" | "loading" | "empty" | "ok" | "error";
@@ -63,11 +62,6 @@ export function RecommendStage({
   const [activeIndex, setActiveIndex] = useState(0);
   const [loadingLine, setLoadingLine] = useState(0);
   const [overviewOpen, setOverviewOpen] = useState(false);
-  const [moodContext, setMoodContext] = useState<RecommendMoodContext | null>(
-    null,
-  );
-  const [moodContextLoading, setMoodContextLoading] = useState(false);
-  const [moodContextError, setMoodContextError] = useState<string | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -93,45 +87,6 @@ export function RecommendStage({
     }, 1600);
     return () => window.clearInterval(id);
   }, [phase]);
-
-  useEffect(() => {
-    if (seeds.length === 0) {
-      setMoodContext(null);
-      setMoodContextError(null);
-      setMoodContextLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setMoodContextLoading(true);
-    setMoodContextError(null);
-
-    void fetchMoodContext(seeds)
-      .then((context) => {
-        if (!cancelled) {
-          setMoodContext(context);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setMoodContext(null);
-          setMoodContextError(
-            err instanceof Error
-              ? err.message
-              : "Could not load match signals.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setMoodContextLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [seeds]);
 
   const runRecommend = useCallback(async () => {
     if (seeds.length === 0) return;
@@ -290,39 +245,23 @@ export function RecommendStage({
         ) : null}
 
         {showMatchZone ? (
-          <>
-            <MatchDropZone
-              seeds={seeds}
-              active={seedDragging}
-              disabled={false}
-              onDropSeed={onDropSeed}
-              onRemoveSeed={onRemoveSeed}
-            />
-            {hasSeeds ? (
-              <SeedMatchSignals
-                context={moodContext}
-                loading={moodContextLoading}
-                error={moodContextError}
-              />
-            ) : null}
-          </>
+          <MatchDropZone
+            seeds={seeds}
+            active={seedDragging}
+            disabled={false}
+            onDropSeed={onDropSeed}
+            onRemoveSeed={onRemoveSeed}
+          />
         ) : null}
 
         {showSelectedTrack ? (
-          <>
-            <MatchDropZone
-              seeds={seeds}
-              active={seedDragging}
-              disabled={false}
-              onDropSeed={onDropSeed}
-              onRemoveSeed={onRemoveSeed}
-            />
-            <SeedMatchSignals
-              context={moodContext}
-              loading={moodContextLoading}
-              error={moodContextError}
-            />
-          </>
+          <MatchDropZone
+            seeds={seeds}
+            active={seedDragging}
+            disabled={false}
+            onDropSeed={onDropSeed}
+            onRemoveSeed={onRemoveSeed}
+          />
         ) : null}
 
         {phase === "loading" ? (

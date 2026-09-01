@@ -21,10 +21,23 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.2"
     ollama_embed_model: str = "nomic-embed-text"
     rag_collection: str = "movies"
-    rag_movie_target: int = 5000
+    rag_movie_target: int = 10000
     rag_chroma_path: str = "data/chroma"
+    rag_min_rating: float = 7.0
+    rag_discover_share: float = 0.4
+    rag_discover_vote_count_gte: int = 500
+    rag_hyde_enabled: bool = True
+    rag_enrich_documents: bool = True
+    rag_enrich_workers: int = 8
+    rag_hybrid_enabled: bool = False
+    rag_hybrid_candidates: int = 32
+    rag_rrf_k: int = 60
     reccobeats_base_url: str = "https://api.reccobeats.com"
     reccobeats_timeout_seconds: float = 4.0
+    lyrics_enabled: bool = True
+    lrclib_base_url: str = "https://lrclib.net"
+    lyrics_timeout_seconds: float = 4.0
+    lyrics_max_chars: int = 1200
 
 
 @lru_cache

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
+from app.rag.bm25 import get_index
 from app.rag.ollama_client import ping_ollama_sync
-from app.rag.recommend import RecommendationParseError, build_mood_context, recommend_for_user
-from app.rag.schemas import RagStatusResponse, RecommendMoodContextResponse, RecommendRequest, RecommendResponse
+from app.rag.recommend import RecommendationParseError, recommend_for_user
+from app.rag.schemas import RagStatusResponse, RecommendRequest, RecommendResponse
 from app.rag.store import count_movies
 from app.spotify import oauth
 
@@ -19,16 +20,9 @@ def rag_status() -> RagStatusResponse:
         ollama_reachable=ping_ollama_sync(),
         embed_model=settings.ollama_embed_model,
         chat_model=settings.ollama_chat_model,
+        hybrid_enabled=settings.rag_hybrid_enabled,
+        bm25_documents=get_index().size if settings.rag_hybrid_enabled else 0,
     )
-
-
-@router.post("/recommend/mood-context", response_model=RecommendMoodContextResponse)
-async def recommend_mood_context(
-    body: RecommendRequest = RecommendRequest(),
-) -> RecommendMoodContextResponse:
-    if oauth.get_tokens() is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return await build_mood_context(body)
 
 
 @router.post("/recommend", response_model=RecommendResponse)

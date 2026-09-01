@@ -28,6 +28,7 @@ def _page_response(results: list[dict], page: int = 1, total_pages: int = 1) -> 
 
 
 def test_collect_movies_prefers_discover_then_popular(monkeypatch):
+    monkeypatch.setattr(ingest_mod.settings, "rag_discover_share", 0.7)
     genre_map = {18: "Drama"}
 
     def fake_discover(api_key: str, page: int, **kwargs) -> httpx.Response:
@@ -83,6 +84,7 @@ def test_collect_movies_skips_empty_overview(monkeypatch):
 
 def test_collect_movies_discover_quota_uses_ceil(monkeypatch):
     """target=5 → discover quota ceil(0.7*5)=4, then 1 from popular."""
+    monkeypatch.setattr(ingest_mod.settings, "rag_discover_share", 0.7)
     genre_map: dict[int, str] = {}
     discover_calls: list[int] = []
 
@@ -234,3 +236,147 @@ def test_run_ingest_resets_collection_before_upsert(monkeypatch):
     assert indexed == 1
     assert calls[0] == "reset"
     assert "upsert" in calls
+
+
+def test_build_document_keeps_overview_last():
+    from app.rag.ingest import _build_document
+
+    document = _build_document(
+        "Blade Runner", "1982", ["Science Fiction"], "A blade runner hunts replicants.",
+        ["dystopia", "cyberpunk"], "Man has made his match.",
+    )
+    assert document.splitlines() == [
+        "Blade Runner (1982)",
+        "Genres: Science Fiction",
+        "Keywords: dystopia, cyberpunk",
+        "Tagline: Man has made his match.",
+        "Overview: A blade runner hunts replicants.",
+    ]
+
+
+def test_build_document_round_trips_through_the_existing_parsers():
+    from app.rag.ingest import _build_document
+    from app.rag.recommend import overview_from_document
+    from app.reccobeats.rerank import genres_from_document
+
+    document = _build_document(
+        "Hereditary", "2018", ["Horror", "Drama"], "A family unravels after a death.",
+        ["grief", "possession"], "Every family tree hides a secret.",
+    )
+    assert genres_from_document(document) == ["Horror", "Drama"]
+    assert overview_from_document(document) == "A family unravels after a death."
+
+
+def test_build_document_omits_empty_enrichment():
+    from app.rag.ingest import _build_document
+
+    document = _build_document("Dune", "1984", ["Science Fiction"], "Spice.", [], "")
+    assert "Keywords:" not in document and "Tagline:" not in document
+
+
+def test_build_document_caps_keyword_count():
+    from app.rag.ingest import MAX_KEYWORDS, _build_document
+
+    document = _build_document(
+        "X", None, ["Drama"], "y", [f"kw{i}" for i in range(40)], "",
+    )
+    keywords = [
+        line for line in document.splitlines() if line.startswith("Keywords:")
+    ][0]
+    assert keywords.count(",") == MAX_KEYWORDS - 1
+
+
+def test_parse_enrichment_extracts_keywords_and_tagline():
+    from app.rag.ingest import parse_enrichment
+
+    keywords, tagline = parse_enrichment(
+        {"tagline": "  A tagline.  ", "keywords": {"keywords": [
+            {"name": "dystopia"}, {"name": "  "}, {"id": 1}, {"name": "cyberpunk"}]}}
+    )
+    assert keywords == ["dystopia", "cyberpunk"]
+    assert tagline == "A tagline."
+
+
+def test_parse_enrichment_tolerates_a_bare_payload():
+    from app.rag.ingest import parse_enrichment
+
+    assert parse_enrichment({}) == ([], "")
+    assert parse_enrichment({"keywords": {}, "tagline": None}) == ([], "")
+
+
+def _result(movie_id: int, rating, *, overview: str = "An overview."):
+    return {
+        "id": movie_id,
+        "title": f"Movie {movie_id}",
+        "overview": overview,
+        "release_date": "2001-01-01",
+        "poster_path": None,
+        "vote_average": rating,
+        "genre_ids": [],
+    }
+
+
+def _collect(results, monkeypatch, *, min_rating=7.0, limit=10):
+    from app.rag import ingest
+
+    monkeypatch.setattr(ingest.settings, "rag_min_rating", min_rating)
+    movies: list = []
+    ingest._append_from_results(
+        results, movies=movies, seen_ids=set(), genre_map={}, limit=limit
+    )
+    return [movie["tmdb_id"] for movie in movies]
+
+
+def test_rating_below_the_floor_is_dropped(monkeypatch):
+    results = [_result(1, 6.9), _result(2, 7.0), _result(3, 8.4)]
+    assert _collect(results, monkeypatch) == [2, 3]
+
+
+def test_unrated_titles_are_dropped(monkeypatch):
+    # /popular applies no filters, so unrated titles reach this gate.
+    results = [_result(1, None), _result(2, 0), _result(3, 7.5)]
+    assert _collect(results, monkeypatch) == [3]
+
+
+def test_floor_is_configurable(monkeypatch):
+    results = [_result(1, 6.2), _result(2, 7.1)]
+    assert _collect(results, monkeypatch, min_rating=6.0) == [1, 2]
+
+
+def test_rating_is_stored_rounded(monkeypatch):
+    from app.rag import ingest
+
+    monkeypatch.setattr(ingest.settings, "rag_min_rating", 7.0)
+    movies: list = []
+    ingest._append_from_results(
+        [_result(1, 7.4499)], movies=movies, seen_ids=set(), genre_map={}, limit=5
+    )
+    assert movies[0]["rating"] == 7.4
+
+
+def test_discover_page_carries_the_rating_floor():
+    import respx
+    from httpx import Response
+
+    from app.movies.client import fetch_discover_movie_page_sync
+
+    with respx.mock:
+        route = respx.get("https://api.themoviedb.org/3/discover/movie").mock(
+            return_value=Response(200, json={"results": [], "total_pages": 1})
+        )
+        fetch_discover_movie_page_sync("key", 1, vote_count_gte=500, vote_average_gte=7.0)
+    assert route.calls[0].request.url.params["vote_average.gte"] == "7.0"
+
+
+def test_discover_page_omits_the_floor_when_unset():
+    import respx
+    from httpx import Response
+
+    from app.movies.client import fetch_discover_movie_page_sync
+
+    with respx.mock:
+        route = respx.get("https://api.themoviedb.org/3/discover/movie").mock(
+            return_value=Response(200, json={"results": [], "total_pages": 1})
+        )
+        fetch_discover_movie_page_sync("key", 1)
+    assert "vote_average.gte" not in route.calls[0].request.url.params
