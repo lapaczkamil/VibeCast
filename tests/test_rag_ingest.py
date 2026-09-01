@@ -512,3 +512,22 @@ def test_paginate_still_raises_when_the_first_page_fails(_no_sleep):
             genre_map={},
             limit=10,
         )
+
+
+def test_reset_collection_recreates_with_cosine(tmp_path: Path, monkeypatch):
+    """Ingest wipes the collection first; the metric must survive that."""
+    monkeypatch.setattr(store_mod.settings, "rag_chroma_path", str(tmp_path))
+    monkeypatch.setattr(store_mod.settings, "rag_collection", "metric_check")
+    monkeypatch.setattr(store_mod, "_client", None)
+
+    store_mod.reset_collection()
+    space = store_mod.get_collection().configuration_json["hnsw"]["space"]
+    assert space == "cosine"
+
+
+def test_get_collection_creates_with_cosine(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(store_mod.settings, "rag_chroma_path", str(tmp_path))
+    monkeypatch.setattr(store_mod.settings, "rag_collection", "fresh")
+    monkeypatch.setattr(store_mod, "_client", None)
+
+    assert store_mod.get_collection().configuration_json["hnsw"]["space"] == "cosine"
