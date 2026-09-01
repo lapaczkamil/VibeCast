@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.2"
     ollama_embed_model: str = "nomic-embed-text"
     rag_collection: str = "movies"
-    rag_movie_target: int = 1000
+    rag_movie_target: int = 5000
     rag_chroma_path: str = "data/chroma"
     reccobeats_base_url: str = "https://api.reccobeats.com"
     reccobeats_timeout_seconds: float = 4.0

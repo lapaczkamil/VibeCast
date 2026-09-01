@@ -18,7 +18,7 @@ from app.movies.client import (
     fetch_popular_page_sync,
     map_genre_ids,
 )
-from app.rag.ollama_client import embed_texts, ping_ollama_sync
+from app.rag.ollama_client import embed_documents, ping_ollama_sync
 from app.rag.store import reset_collection, upsert_movies
 
 BATCH_SIZE = 16
@@ -187,7 +187,7 @@ def run_ingest() -> int:
             }
             for movie in batch
         ]
-        embeddings = embed_texts(documents)
+        embeddings = embed_documents(documents)
         upsert_movies(ids, documents, metadatas, embeddings)
         indexed += len(batch)
 

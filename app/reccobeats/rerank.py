@@ -11,7 +11,14 @@ LOW_VALENCE_THRESHOLD = 0.35
 HIGH_VALENCE_THRESHOLD = 0.65
 ACOUSTICNESS_THRESHOLD = 0.55
 DANCEABILITY_THRESHOLD = 0.65
-GENRE_BOOST = 3
+
+# Share of the final score owned by the audio rules; the rest is the vector
+# ranking from Chroma. Keep below 0.5 so retrieval stays the primary signal.
+AUDIO_WEIGHT = 0.4
+
+# Floor for the purity multiplier: off-mood genres dilute a match but never
+# cancel it, so a partial fit still beats no fit at all.
+PURITY_FLOOR = 0.5
 
 
 def genres_from_document(document: str) -> list[str]:
@@ -24,41 +31,55 @@ def genres_from_document(document: str) -> list[str]:
     return []
 
 
-def _genre_matches(candidate_genre: str, affinity_genre: str) -> bool:
-    candidate = candidate_genre.casefold()
-    affinity = affinity_genre.casefold()
-    return candidate == affinity or candidate in affinity or affinity in candidate
+def _clamp(value: float) -> float:
+    return max(0.0, min(1.0, value))
 
 
-def _count_matching_genres(candidate_genres: list[str], affinity_genres: set[str]) -> int:
-    matches = 0
-    for candidate_genre in candidate_genres:
-        for affinity_genre in affinity_genres:
-            if _genre_matches(candidate_genre, affinity_genre):
-                matches += 1
-                break
-    return matches
+def _above(value: float | None, threshold: float) -> float:
+    """Signal strength above a threshold, ramped 0-1 over the remaining range."""
+    if value is None or value <= threshold:
+        return 0.0
+    return _clamp((value - threshold) / (1.0 - threshold))
 
 
-def _affinity_boost(candidate_genres: list[str], features: AudioFeatures) -> int:
-    boost = 0
+def _below(value: float | None, threshold: float) -> float:
+    """Signal strength below a threshold, ramped 0-1 down to zero."""
+    if value is None or value >= threshold:
+        return 0.0
+    return _clamp((threshold - value) / threshold)
 
-    if features.energy is not None and features.energy > ENERGY_THRESHOLD:
-        boost += GENRE_BOOST * _count_matching_genres(candidate_genres, HIGH_ENERGY_GENRES)
 
-    if features.valence is not None and features.valence < LOW_VALENCE_THRESHOLD:
-        boost += GENRE_BOOST * _count_matching_genres(candidate_genres, LOW_VALENCE_GENRES)
+def _audio_affinity(candidate_genres: list[str], features: AudioFeatures) -> float:
+    """How well a movie's genres fit the active audio dimensions, 0-1.
 
-    if features.valence is not None and features.valence > HIGH_VALENCE_THRESHOLD:
-        boost += GENRE_BOOST * _count_matching_genres(candidate_genres, HIGH_VALENCE_GENRES)
+    Each dimension counts at most once, so genre count alone cannot inflate a
+    score, while a movie that matches several active dimensions scores above
+    one that only matches a single dimension.
+    """
+    dimensions = (
+        (_above(features.energy, ENERGY_THRESHOLD), HIGH_ENERGY_GENRES),
+        (_below(features.valence, LOW_VALENCE_THRESHOLD), LOW_VALENCE_GENRES),
+        (_above(features.valence, HIGH_VALENCE_THRESHOLD), HIGH_VALENCE_GENRES),
+        (_above(features.acousticness, ACOUSTICNESS_THRESHOLD), HIGH_ACOUSTIC_GENRES),
+        (_above(features.danceability, DANCEABILITY_THRESHOLD), HIGH_DANCE_GENRES),
+    )
+    active = [(strength, genres) for strength, genres in dimensions if strength > 0.0]
+    candidate = list(dict.fromkeys(genre.casefold() for genre in candidate_genres))
+    if not active or not candidate:
+        return 0.0
 
-    if features.acousticness is not None and features.acousticness > ACOUSTICNESS_THRESHOLD:
-        boost += GENRE_BOOST * _count_matching_genres(candidate_genres, HIGH_ACOUSTIC_GENRES)
+    matched: set[str] = set()
+    total = 0.0
+    for strength, affinity_genres in active:
+        affinity = {genre.casefold() for genre in affinity_genres}
+        hits = {genre for genre in candidate if genre in affinity}
+        if hits:
+            total += strength
+            matched |= hits
 
-    if features.danceability is not None and features.danceability > DANCEABILITY_THRESHOLD:
-        boost += GENRE_BOOST * _count_matching_genres(candidate_genres, HIGH_DANCE_GENRES)
-
-    return boost
+    dimension_score = total / len(active)
+    purity = len(matched) / len(candidate)
+    return dimension_score * (PURITY_FLOOR + (1.0 - PURITY_FLOOR) * purity)
 
 
 def rerank_candidates(
@@ -67,13 +88,17 @@ def rerank_candidates(
     features: AudioFeatures,
     keep: int = 8,
 ) -> tuple[list[str], list[dict]]:
-    scored: list[tuple[float, int, str, dict]] = []
     total = len(documents)
+    if total == 0:
+        return [], []
 
-    for index, (document, metadata) in enumerate(zip(documents, metadatas)):
-        base = total - index
-        genres = genres_from_document(document)
-        score = base + _affinity_boost(genres, features)
+    scored: list[tuple[float, int, str, dict]] = []
+    for index, (document, metadata) in enumerate(
+        zip(documents, metadatas, strict=True)
+    ):
+        vector_score = (total - index) / total
+        affinity = _audio_affinity(genres_from_document(document), features)
+        score = (1.0 - AUDIO_WEIGHT) * vector_score + AUDIO_WEIGHT * affinity
         scored.append((score, index, document, metadata))
 
     scored.sort(key=lambda item: (-item[0], item[1]))

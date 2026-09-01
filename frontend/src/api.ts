@@ -7,6 +7,7 @@ import type {
   RagStatus,
   RateLimitStatus,
   RecentlyPlayedResponse,
+  RecommendMoodContext,
   RecommendResponse,
   SeedTrack,
   SessionResponse,
@@ -262,19 +263,49 @@ export async function searchSpotifyTracks(
   return res.json();
 }
 
+function recommendTrackPayload(tracks: SeedTrack[]) {
+  return {
+    tracks: tracks.map((track) => ({
+      id: track.id,
+      name: track.name,
+      artists: track.artists,
+    })),
+  };
+}
+
+export async function fetchMoodContext(
+  tracks: SeedTrack[],
+): Promise<RecommendMoodContext> {
+  const res = await fetch("/api/recommend/mood-context", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(recommendTrackPayload(tracks)),
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Not authenticated"),
+      );
+    }
+    if (res.status === 422) {
+      throw new Error(
+        await errorMessageFromResponse(res, "At most 1 track allowed"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Failed to load match signals"),
+    );
+  }
+  return res.json();
+}
+
 export async function requestRecommendations(
   tracks: SeedTrack[],
 ): Promise<RecommendResponse> {
   const res = await fetch("/api/recommend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tracks: tracks.map((track) => ({
-        id: track.id,
-        name: track.name,
-        artists: track.artists,
-      })),
-    }),
+    body: JSON.stringify(recommendTrackPayload(tracks)),
   });
   if (!res.ok) {
     if (res.status === 401) {

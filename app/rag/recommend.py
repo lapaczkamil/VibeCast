@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
 
 from app.config import settings
 from app.movies.client import _map_poster_url, _map_rating, fetch_movie
-from app.rag.ollama_client import chat_json, embed_texts
+from app.rag.ollama_client import chat_json, embed_query
 from app.rag.schemas import (
     RecommendMovieItem,
+    RecommendMoodContextResponse,
     RecommendRequest,
     RecommendResponse,
     RecommendTrackSeed,
@@ -19,6 +21,7 @@ from app.rag.store import query_movies
 from app.reccobeats.client import fetch_audio_features
 from app.reccobeats.mood import format_audio_profile
 from app.reccobeats.rerank import rerank_candidates
+from app.reccobeats.schemas import AudioFeatures
 from app.spotify.client import (
     fetch_currently_playing,
     fetch_recently_played,
@@ -41,6 +44,14 @@ MAX_SEEDS = 1
 
 class RecommendationParseError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class _MoodResolution:
+    mood_query: str
+    track_line: str
+    audio_profile: str | None
+    features: AudioFeatures | None
 
 
 def build_mood_query(
@@ -257,9 +268,9 @@ async def _enrich_missing_ratings(
     ]
 
 
-async def recommend_for_user(
+async def _resolve_mood(
     request: RecommendRequest | None = None,
-) -> RecommendResponse:
+) -> _MoodResolution:
     request = request or RecommendRequest()
     if len(request.tracks) > MAX_SEEDS:
         raise HTTPException(status_code=422, detail="At most 1 track allowed")
@@ -267,6 +278,8 @@ async def recommend_for_user(
     seeds = _normalize_seeds(request.tracks)
     if seeds:
         mood_query = _build_mood_from_seeds(seeds)
+        track_line = _track_line(seeds[0].name, seeds[0].artists)
+        seed_id = seeds[0].id
     else:
         now_playing_line = await _now_playing_line_only()
         if not now_playing_line:
@@ -275,17 +288,48 @@ async def recommend_for_user(
                 detail="Select at least one track or start playing music",
             )
         mood_query = now_playing_line
+        track_line = now_playing_line.removeprefix("Now: ")
+        seed_id = None
 
     features = None
-    seed_id: str | None = seeds[0].id if seeds else None
     if seed_id:
         features = await fetch_audio_features(seed_id)
+
+    audio_profile: str | None = None
     if features is not None:
         profile = format_audio_profile(features)
         if profile:
+            audio_profile = profile
             mood_query = f"{mood_query}\nAudio profile: {profile}"
 
-    embedding = embed_texts([mood_query])[0]
+    return _MoodResolution(
+        mood_query=mood_query,
+        track_line=track_line,
+        audio_profile=audio_profile,
+        features=features,
+    )
+
+
+async def build_mood_context(
+    request: RecommendRequest | None = None,
+) -> RecommendMoodContextResponse:
+    resolved = await _resolve_mood(request)
+    return RecommendMoodContextResponse(
+        track_line=resolved.track_line,
+        mood_query=resolved.mood_query,
+        audio_profile=resolved.audio_profile,
+        rerank_enabled=resolved.features is not None,
+    )
+
+
+async def recommend_for_user(
+    request: RecommendRequest | None = None,
+) -> RecommendResponse:
+    resolved = await _resolve_mood(request)
+    mood_query = resolved.mood_query
+    features = resolved.features
+
+    embedding = embed_query(mood_query)
     fetch_k = RAG_FETCH_K if features is not None else RAG_TOP_K
     documents, metadatas = query_movies(embedding, fetch_k)
     if features is not None and documents:

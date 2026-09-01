@@ -219,7 +219,7 @@ def test_run_ingest_resets_collection_before_upsert(monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(ingest_mod, "embed_texts", lambda docs: [[0.1, 0.2, 0.3] for _ in docs])
+    monkeypatch.setattr(ingest_mod, "embed_documents", lambda docs: [[0.1, 0.2, 0.3] for _ in docs])
 
     def fake_reset() -> None:
         calls.append("reset")

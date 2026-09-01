@@ -15,7 +15,7 @@ def _get_client() -> chromadb.PersistentClient:
 
 
 def get_collection():
-    return _get_client().get_or_create_collection(name=settings.rag_collection)
+    return _get_client().get_or_create_collection(name=settings.rag_collection, metadata={"hnsw:space": "cosine"})
 
 
 def upsert_movies(

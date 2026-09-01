@@ -97,7 +97,7 @@ def test_recommend_happy_path(monkeypatch):
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
-        "app.rag.recommend.embed_texts", lambda texts: [[0.1, 0.2, 0.3]]
+        "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
         "app.rag.recommend.query_movies",
@@ -163,7 +163,7 @@ def test_recommend_drops_unknown_tmdb_ids(monkeypatch):
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
-        "app.rag.recommend.embed_texts", lambda texts: [[0.1, 0.2, 0.3]]
+        "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
         "app.rag.recommend.query_movies",
@@ -202,7 +202,7 @@ def test_recommend_parse_failure_502(monkeypatch):
     monkeypatch.setattr("app.rag.routes.count_movies", lambda: 100)
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     monkeypatch.setattr(
-        "app.rag.recommend.embed_texts", lambda texts: [[0.1, 0.2, 0.3]]
+        "app.rag.recommend.embed_query", lambda text: [0.1, 0.2, 0.3]
     )
     monkeypatch.setattr(
         "app.rag.recommend.query_movies",
@@ -230,11 +230,11 @@ def test_recommend_with_seed_tracks_skips_listening_history(monkeypatch):
     monkeypatch.setattr("app.rag.routes.ping_ollama_sync", lambda: True)
     captured: list[str] = []
 
-    def fake_embed(texts):
-        captured.extend(texts)
-        return [[0.1, 0.2, 0.3]]
+    def fake_embed(text):
+        captured.extend([text])
+        return [0.1, 0.2, 0.3]
 
-    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
     monkeypatch.setattr(
         "app.rag.recommend.query_movies",
         lambda emb, k: (["doc"], CANDIDATE_METADATAS[:1]),
@@ -359,11 +359,11 @@ def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
 
     captured: dict = {}
 
-    def fake_embed(texts):
-        captured["mood"] = texts[0]
-        return [[0.1, 0.2, 0.3]]
+    def fake_embed(text):
+        captured["mood"] = text
+        return [0.1, 0.2, 0.3]
 
-    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
 
     docs = [
         "A\nGenres: Drama\nOverview: a",
@@ -410,7 +410,7 @@ def test_recommend_enriches_mood_with_reccobeats(monkeypatch):
                 "content": [
                     {
                         "energy": 0.95,
-                        "valence": 0.2,
+                        "valence": 0.5,
                         "danceability": 0.3,
                         "acousticness": 0.1,
                         "tempo": 140.0,
@@ -443,11 +443,11 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
 
     captured: dict = {}
 
-    def fake_embed(texts):
-        captured["mood"] = texts[0]
-        return [[0.1, 0.2, 0.3]]
+    def fake_embed(text):
+        captured["mood"] = text
+        return [0.1, 0.2, 0.3]
 
-    monkeypatch.setattr("app.rag.recommend.embed_texts", fake_embed)
+    monkeypatch.setattr("app.rag.recommend.embed_query", fake_embed)
 
     def fake_query(embedding, n_results):
         captured["n_results"] = n_results
@@ -477,3 +477,45 @@ def test_recommend_soft_fails_reccobeats(monkeypatch):
     assert response.status_code == 200
     assert "Audio profile:" not in captured["mood"]
     assert captured["n_results"] == 8
+
+
+@respx.mock
+def test_recommend_mood_context_returns_match_signals(monkeypatch):
+    oauth.set_tokens(TOKENS)
+
+    respx.get("https://api.reccobeats.com/v1/audio-features").mock(
+        return_value=Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "energy": 0.95,
+                        "valence": 0.5,
+                        "danceability": 0.3,
+                        "acousticness": 0.1,
+                        "tempo": 140.0,
+                    }
+                ]
+            },
+        )
+    )
+
+    response = client.post(
+        "/recommend/mood-context",
+        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["track_line"] == "Loud by X"
+    assert "Selected tracks: Loud by X" in body["mood_query"]
+    assert body["audio_profile"]
+    assert body["rerank_enabled"] is True
+    assert "Audio profile:" in body["mood_query"]
+
+
+def test_recommend_mood_context_requires_auth():
+    response = client.post(
+        "/recommend/mood-context",
+        json={"tracks": [{"id": "seed1", "name": "Loud", "artists": ["X"]}]},
+    )
+    assert response.status_code == 401
