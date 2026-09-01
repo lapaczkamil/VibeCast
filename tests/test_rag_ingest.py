@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 
 from app.rag import ingest as ingest_mod
 from app.rag import store as store_mod
@@ -380,3 +381,134 @@ def test_discover_page_omits_the_floor_when_unset():
         )
         fetch_discover_movie_page_sync("key", 1)
     assert "vote_average.gte" not in route.calls[0].request.url.params
+
+
+def _resp(status: int, *, results=None, total_pages: int = 1, headers=None):
+    return httpx.Response(
+        status,
+        json={"results": results or [], "total_pages": total_pages, "page": 1},
+        headers=headers or {},
+    )
+
+
+@pytest.fixture
+def _no_sleep(monkeypatch):
+    slept: list[float] = []
+    monkeypatch.setattr(ingest_mod.time, "sleep", lambda s: slept.append(s))
+    return slept
+
+
+def test_rate_limit_is_retried_not_swallowed(_no_sleep):
+    pages = [_resp(429), _resp(200, results=[_movie_result(1, "One")])]
+    calls: list[int] = []
+
+    def fetch(api_key, page):
+        calls.append(page)
+        return pages.pop(0)
+
+    response = ingest_mod._fetch_page(fetch, "key", 1)
+    assert response.status_code == 200
+    assert calls == [1, 1]
+
+
+def test_server_errors_are_retried():
+    assert ingest_mod._is_retryable(500) and ingest_mod._is_retryable(503)
+    assert ingest_mod._is_retryable(429)
+
+
+def test_client_errors_are_not_retried(_no_sleep):
+    calls: list[int] = []
+
+    def fetch(api_key, page):
+        calls.append(page)
+        return _resp(400)
+
+    assert ingest_mod._fetch_page(fetch, "key", 501).status_code == 400
+    assert calls == [501]  # page 501 is TMDB's real ceiling, not a hiccup
+
+
+def test_retries_give_up_after_the_limit(_no_sleep):
+    calls: list[int] = []
+
+    def fetch(api_key, page):
+        calls.append(page)
+        return _resp(429)
+
+    assert ingest_mod._fetch_page(fetch, "key", 1).status_code == 429
+    assert len(calls) == ingest_mod.MAX_PAGE_RETRIES + 1
+
+
+def test_retry_after_header_is_honoured(_no_sleep):
+    response = _resp(429, headers={"Retry-After": "7"})
+    assert ingest_mod._retry_delay(response, 0) == 7.0
+
+
+def test_retry_after_is_capped():
+    response = _resp(429, headers={"Retry-After": "9999"})
+    assert ingest_mod._retry_delay(response, 0) == ingest_mod.MAX_RETRY_SLEEP_SECONDS
+
+
+def test_garbage_retry_after_falls_back_to_backoff():
+    response = _resp(429, headers={"Retry-After": "soon"})
+    assert ingest_mod._retry_delay(response, 0) == ingest_mod.RETRY_BACKOFF_SECONDS
+
+
+def test_backoff_grows_and_is_capped():
+    plain = _resp(429)
+    delays = [ingest_mod._retry_delay(plain, attempt) for attempt in range(8)]
+    assert delays[0] < delays[1] < delays[2]
+    assert max(delays) == ingest_mod.MAX_RETRY_SLEEP_SECONDS
+
+
+def test_paginate_reports_an_exhausted_source(_no_sleep):
+    def fetch(api_key, page):
+        return _resp(200, results=[_movie_result(1, "One")], total_pages=1)
+
+    movies: list = []
+    reason = ingest_mod._paginate(
+        fetch, "key", movies=movies, seen_ids=set(), genre_map={}, limit=50
+    )
+    assert reason == "source exhausted at page 1/1"
+
+
+def test_paginate_reports_the_http_status_that_stopped_it(_no_sleep):
+    pages = [
+        _resp(200, results=[_movie_result(1, "One")], total_pages=99),
+        _resp(400),
+    ]
+
+    def fetch(api_key, page):
+        return pages[page - 1]
+
+    movies: list = []
+    reason = ingest_mod._paginate(
+        fetch, "key", movies=movies, seen_ids=set(), genre_map={}, limit=50
+    )
+    assert reason == "HTTP 400 on page 2"
+
+
+def test_paginate_reports_reaching_the_quota(_no_sleep):
+    def fetch(api_key, page):
+        return _resp(
+            200,
+            results=[_movie_result(i, f"M{i}") for i in range(page * 10, page * 10 + 5)],
+            total_pages=99,
+        )
+
+    movies: list = []
+    reason = ingest_mod._paginate(
+        fetch, "key", movies=movies, seen_ids=set(), genre_map={}, limit=5
+    )
+    assert reason.startswith("quota reached")
+
+
+def test_paginate_still_raises_when_the_first_page_fails(_no_sleep):
+    with pytest.raises(RuntimeError):
+        ingest_mod._paginate(
+            lambda api_key, page: _resp(400),
+            "key",
+            movies=[],
+            seen_ids=set(),
+            genre_map={},
+            limit=10,
+        )

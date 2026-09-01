@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     rag_movie_target: int = 10000
     rag_chroma_path: str = "data/chroma"
     rag_min_rating: float = 7.0
-    rag_discover_share: float = 0.4
+    rag_discover_share: float = 0.6
     rag_discover_vote_count_gte: int = 500
     rag_hyde_enabled: bool = True
     rag_enrich_documents: bool = True

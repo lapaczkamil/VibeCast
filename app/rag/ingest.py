@@ -25,6 +25,9 @@ from app.rag.store import reset_collection, upsert_movies
 
 BATCH_SIZE = 16
 PAGE_SLEEP_SECONDS = 0.25
+MAX_PAGE_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 1.0
+MAX_RETRY_SLEEP_SECONDS = 30.0
 # Ingest filters live in Settings; see RAG_MIN_RATING and friends in .env.
 
 
@@ -121,6 +124,37 @@ def _append_from_results(
         )
 
 
+def _is_retryable(status_code: int) -> bool:
+    """Rate limits and server hiccups are worth another try; 4xx is not."""
+    return status_code == 429 or status_code >= 500
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(float(retry_after), MAX_RETRY_SLEEP_SECONDS)
+        except ValueError:
+            pass
+    return min(RETRY_BACKOFF_SECONDS * (2**attempt), MAX_RETRY_SLEEP_SECONDS)
+
+
+def _fetch_page(fetch_page, api_key: str, page: int) -> httpx.Response:
+    """Fetch one page, retrying rate limits and server errors with backoff."""
+    response = fetch_page(api_key, page)
+    for attempt in range(MAX_PAGE_RETRIES):
+        if not _is_retryable(response.status_code):
+            return response
+        delay = _retry_delay(response, attempt)
+        print(
+            f"  page {page}: HTTP {response.status_code}, retrying in "
+            f"{delay:.1f}s ({attempt + 1}/{MAX_PAGE_RETRIES})"
+        )
+        time.sleep(delay)
+        response = fetch_page(api_key, page)
+    return response
+
+
 def _paginate(
     fetch_page,
     api_key: str,
@@ -129,20 +163,25 @@ def _paginate(
     seen_ids: set[int],
     genre_map: dict[int, str],
     limit: int,
-) -> None:
+) -> str:
+    """Collect pages until the limit is hit; returns why it stopped.
+
+    The reason matters: a swallowed 429 and an exhausted source used to look
+    identical from the outside, both just yielding a short index.
+    """
     page = 1
     while len(movies) < limit:
-        response = fetch_page(api_key, page)
+        response = _fetch_page(fetch_page, api_key, page)
         if response.status_code != 200:
             if movies:
-                break
+                return f"HTTP {response.status_code} on page {page}"
             raise RuntimeError(
                 f"TMDB page {page} failed: HTTP {response.status_code}"
             )
         payload = response.json()
         results = payload.get("results", [])
         if not results:
-            break
+            return f"page {page} came back empty"
         _append_from_results(
             results,
             movies=movies,
@@ -150,10 +189,12 @@ def _paginate(
             genre_map=genre_map,
             limit=limit,
         )
-        if page >= payload.get("total_pages", page):
-            break
+        total_pages = payload.get("total_pages", page)
+        if page >= total_pages:
+            return f"source exhausted at page {page}/{total_pages}"
         page += 1
         time.sleep(PAGE_SLEEP_SECONDS)
+    return f"quota reached on page {page}"
 
 
 def _collect_movies(
@@ -173,7 +214,7 @@ def _collect_movies(
             vote_average_gte=settings.rag_min_rating,
         )
 
-    _paginate(
+    reason = _paginate(
         discover_fetch,
         api_key,
         movies=movies,
@@ -181,13 +222,20 @@ def _collect_movies(
         genre_map=genre_map,
         limit=discover_target,
     )
-    _paginate(
+    print(f"discover: {len(movies)}/{discover_target} kept, {reason}")
+
+    before_popular = len(movies)
+    reason = _paginate(
         fetch_popular_page_sync,
         api_key,
         movies=movies,
         seen_ids=seen_ids,
         genre_map=genre_map,
         limit=target,
+    )
+    print(
+        f"popular: {len(movies) - before_popular} added "
+        f"({len(movies)}/{target} total), {reason}"
     )
     return movies
 
