@@ -125,13 +125,6 @@ export type RecommendResponse = {
   items: RecommendMovieItem[];
 };
 
-export type RecommendMoodContext = {
-  track_line: string;
-  mood_query: string;
-  audio_profile: string | null;
-  rerank_enabled: boolean;
-};
-
 export type SeedTrack = {
   id: string;
   name: string;

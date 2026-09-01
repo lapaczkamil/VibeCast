@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from math import ceil
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.movies.client import (
     _map_year,
     fetch_discover_movie_page_sync,
     fetch_genre_list_sync,
+    fetch_movie_detail_sync,
     fetch_popular_page_sync,
     map_genre_ids,
 )
@@ -23,8 +25,13 @@ from app.rag.store import reset_collection, upsert_movies
 
 BATCH_SIZE = 16
 PAGE_SLEEP_SECONDS = 0.25
-DISCOVER_SHARE = 0.7
-DISCOVER_VOTE_COUNT_GTE = 200
+MAX_PAGE_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 1.0
+MAX_RETRY_SLEEP_SECONDS = 30.0
+# Ingest filters live in Settings; see RAG_MIN_RATING and friends in .env.
+
+
+MAX_KEYWORDS = 12
 
 
 def _build_document(
@@ -32,10 +39,51 @@ def _build_document(
     year: str | None,
     genre_names: list[str],
     overview: str,
+    keywords: list[str] | None = None,
+    tagline: str = "",
 ) -> str:
+    """Overview stays last: overview_from_document() reads to end of text."""
     year_part = f" ({year})" if year else ""
     genres_part = ", ".join(genre_names) if genre_names else "Unknown"
-    return f"{title}{year_part}\nGenres: {genres_part}\nOverview: {overview}"
+    lines = [f"{title}{year_part}", f"Genres: {genres_part}"]
+    if keywords:
+        lines.append("Keywords: " + ", ".join(keywords[:MAX_KEYWORDS]))
+    if tagline:
+        lines.append(f"Tagline: {tagline}")
+    lines.append(f"Overview: {overview}")
+    return "\n".join(lines)
+
+
+def parse_enrichment(payload: dict[str, Any]) -> tuple[list[str], str]:
+    """Tagline and keyword names from a detail payload, tolerant of gaps."""
+    keywords_block = payload.get("keywords") or {}
+    raw_keywords = keywords_block.get("keywords") or []
+    keywords = [
+        str(item.get("name") or "").strip()
+        for item in raw_keywords
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ]
+    return keywords, str(payload.get("tagline") or "").strip()
+
+
+def _fetch_enrichment(
+    api_key: str,
+    movie_ids: list[int],
+) -> dict[int, tuple[list[str], str]]:
+    """Keywords and taglines for every movie; failures degrade to nothing."""
+
+    def fetch_one(movie_id: int) -> tuple[int, tuple[list[str], str]]:
+        try:
+            response = fetch_movie_detail_sync(api_key, movie_id)
+            if response.status_code != 200:
+                return movie_id, ([], "")
+            return movie_id, parse_enrichment(response.json())
+        except Exception:
+            return movie_id, ([], "")
+
+    workers = max(1, settings.rag_enrich_workers)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return dict(pool.map(fetch_one, movie_ids))
 
 
 def _append_from_results(
@@ -55,6 +103,11 @@ def _append_from_results(
         overview = (result.get("overview") or "").strip()
         if not overview:
             continue
+        rating = _map_rating(result.get("vote_average"))
+        # None covers unrated titles: /popular carries no filters of its own,
+        # so this is the only gate both sources pass through.
+        if rating is None or rating < settings.rag_min_rating:
+            continue
         seen_ids.add(movie_id)
         movies.append(
             {
@@ -62,13 +115,44 @@ def _append_from_results(
                 "title": result.get("title") or "Unknown",
                 "year": _map_year(result.get("release_date")),
                 "poster_path": result.get("poster_path"),
-                "rating": _map_rating(result.get("vote_average")),
+                "rating": rating,
                 "overview": overview,
                 "genre_names": map_genre_ids(
                     result.get("genre_ids") or [], genre_map
                 ),
             }
         )
+
+
+def _is_retryable(status_code: int) -> bool:
+    """Rate limits and server hiccups are worth another try; 4xx is not."""
+    return status_code == 429 or status_code >= 500
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(float(retry_after), MAX_RETRY_SLEEP_SECONDS)
+        except ValueError:
+            pass
+    return min(RETRY_BACKOFF_SECONDS * (2**attempt), MAX_RETRY_SLEEP_SECONDS)
+
+
+def _fetch_page(fetch_page, api_key: str, page: int) -> httpx.Response:
+    """Fetch one page, retrying rate limits and server errors with backoff."""
+    response = fetch_page(api_key, page)
+    for attempt in range(MAX_PAGE_RETRIES):
+        if not _is_retryable(response.status_code):
+            return response
+        delay = _retry_delay(response, attempt)
+        print(
+            f"  page {page}: HTTP {response.status_code}, retrying in "
+            f"{delay:.1f}s ({attempt + 1}/{MAX_PAGE_RETRIES})"
+        )
+        time.sleep(delay)
+        response = fetch_page(api_key, page)
+    return response
 
 
 def _paginate(
@@ -79,20 +163,25 @@ def _paginate(
     seen_ids: set[int],
     genre_map: dict[int, str],
     limit: int,
-) -> None:
+) -> str:
+    """Collect pages until the limit is hit; returns why it stopped.
+
+    The reason matters: a swallowed 429 and an exhausted source used to look
+    identical from the outside, both just yielding a short index.
+    """
     page = 1
     while len(movies) < limit:
-        response = fetch_page(api_key, page)
+        response = _fetch_page(fetch_page, api_key, page)
         if response.status_code != 200:
             if movies:
-                break
+                return f"HTTP {response.status_code} on page {page}"
             raise RuntimeError(
                 f"TMDB page {page} failed: HTTP {response.status_code}"
             )
         payload = response.json()
         results = payload.get("results", [])
         if not results:
-            break
+            return f"page {page} came back empty"
         _append_from_results(
             results,
             movies=movies,
@@ -100,10 +189,12 @@ def _paginate(
             genre_map=genre_map,
             limit=limit,
         )
-        if page >= payload.get("total_pages", page):
-            break
+        total_pages = payload.get("total_pages", page)
+        if page >= total_pages:
+            return f"source exhausted at page {page}/{total_pages}"
         page += 1
         time.sleep(PAGE_SLEEP_SECONDS)
+    return f"quota reached on page {page}"
 
 
 def _collect_movies(
@@ -113,14 +204,17 @@ def _collect_movies(
 ) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    discover_target = min(target, ceil(DISCOVER_SHARE * target))
+    discover_target = min(target, ceil(settings.rag_discover_share * target))
 
     def discover_fetch(key: str, page: int) -> httpx.Response:
         return fetch_discover_movie_page_sync(
-            key, page, vote_count_gte=DISCOVER_VOTE_COUNT_GTE
+            key,
+            page,
+            vote_count_gte=settings.rag_discover_vote_count_gte,
+            vote_average_gte=settings.rag_min_rating,
         )
 
-    _paginate(
+    reason = _paginate(
         discover_fetch,
         api_key,
         movies=movies,
@@ -128,13 +222,20 @@ def _collect_movies(
         genre_map=genre_map,
         limit=discover_target,
     )
-    _paginate(
+    print(f"discover: {len(movies)}/{discover_target} kept, {reason}")
+
+    before_popular = len(movies)
+    reason = _paginate(
         fetch_popular_page_sync,
         api_key,
         movies=movies,
         seen_ids=seen_ids,
         genre_map=genre_map,
         limit=target,
+    )
+    print(
+        f"popular: {len(movies) - before_popular} added "
+        f"({len(movies)}/{target} total), {reason}"
     )
     return movies
 
@@ -162,6 +263,13 @@ def run_ingest() -> int:
     if not movies:
         raise RuntimeError("No movies collected from TMDB discover/popular pages")
 
+    enrichment: dict[int, tuple[list[str], str]] = {}
+    if settings.rag_enrich_documents:
+        print(f"Fetching keywords and taglines for {len(movies)} movies...")
+        enrichment = _fetch_enrichment(
+            api_key, [movie["tmdb_id"] for movie in movies]
+        )
+
     reset_collection()
 
     indexed = 0
@@ -174,6 +282,7 @@ def run_ingest() -> int:
                 movie["year"],
                 movie["genre_names"],
                 movie["overview"],
+                *enrichment.get(movie["tmdb_id"], ([], "")),
             )
             for movie in batch
         ]

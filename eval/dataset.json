@@ -1,0 +1,283 @@
+{
+  "_comment": "Seed judgements for retrieval evaluation. Edit freely: these encode one person's taste, which is exactly what makes them worth owning. 'relevant' lists exact tmdb_ids (a strict, sparse signal); 'expected_genres' grades whether the candidate pool lands in the right tonal neighbourhood, which is what retrieval is actually responsible for. Queries mirror the format produced by _resolve_mood.",
+  "queries": [
+    {
+      "id": "synthwave-night-drive",
+      "mood": "Selected tracks: Nightcall by Kavinsky\nAudio profile: balanced energy, dark/low valence, moderate tempo (~98 BPM), moderately rhythmic, electronic/produced, vocal-led",
+      "relevant": [
+        64690,
+        335984,
+        78,
+        339403,
+        414906
+      ],
+      "expected_genres": [
+        "Crime",
+        "Thriller",
+        "Science Fiction",
+        "Action"
+      ],
+      "track": "Nightcall",
+      "artist": "Kavinsky"
+    },
+    {
+      "id": "frantic-jazz-drums",
+      "mood": "Selected tracks: Caravan by Buddy Rich\nAudio profile: high energy, emotionally mixed, fast tempo (~180 BPM), danceable, mostly acoustic, instrumental",
+      "relevant": [
+        367412,
+        339403,
+        313369
+      ],
+      "expected_genres": [
+        "Music",
+        "Drama"
+      ],
+      "track": "Caravan",
+      "artist": "Buddy Rich"
+    },
+    {
+      "id": "ambient-melancholy-piano",
+      "mood": "Selected tracks: Avril 14th by Aphex Twin\nAudio profile: calm, dark/low valence, slow tempo (~64 BPM), low danceability, mostly acoustic, instrumental",
+      "relevant": [
+        153,
+        152601,
+        666277,
+        965150,
+        376867
+      ],
+      "expected_genres": [
+        "Drama",
+        "Romance"
+      ],
+      "track": "Avril 14th",
+      "artist": "Aphex Twin"
+    },
+    {
+      "id": "aggressive-metal",
+      "mood": "Selected tracks: Bleed by Meshuggah\nAudio profile: high energy, dark/low valence, fast tempo (~156 BPM), low danceability, electronic/produced, instrumental",
+      "relevant": [
+        76341,
+        245891,
+        273481,
+        414906
+      ],
+      "expected_genres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "War"
+      ],
+      "track": "Bleed",
+      "artist": "Meshuggah"
+    },
+    {
+      "id": "whimsical-chanson",
+      "mood": "Selected tracks: La Valse d'Amelie by Yann Tiersen\nAudio profile: balanced energy, bright/uplifting, moderate tempo (~112 BPM), moderately rhythmic, mostly acoustic, instrumental",
+      "relevant": [
+        194,
+        120467,
+        116149,
+        129
+      ],
+      "expected_genres": [
+        "Comedy",
+        "Romance",
+        "Family",
+        "Animation",
+        "Fantasy"
+      ],
+      "track": "La Valse d'Amelie",
+      "artist": "Yann Tiersen"
+    },
+    {
+      "id": "dark-drone-dread",
+      "mood": "Selected tracks: Threnody by Penderecki\nAudio profile: calm, dark/low valence, slow tempo (~52 BPM), low danceability, mostly acoustic, instrumental",
+      "relevant": [
+        493922,
+        503919,
+        475557
+      ],
+      "expected_genres": [
+        "Horror",
+        "Thriller",
+        "Mystery"
+      ],
+      "track": "Threnody to the Victims of Hiroshima",
+      "artist": "Krzysztof Penderecki"
+    },
+    {
+      "id": "orchestral-epic",
+      "mood": "Selected tracks: Time by Hans Zimmer\nAudio profile: balanced energy, emotionally mixed, slow tempo (~72 BPM), low danceability, mostly acoustic, instrumental",
+      "relevant": [
+        157336,
+        374720,
+        530915,
+        329865
+      ],
+      "expected_genres": [
+        "Drama",
+        "History",
+        "War",
+        "Science Fiction",
+        "Adventure"
+      ],
+      "track": "Time",
+      "artist": "Hans Zimmer"
+    },
+    {
+      "id": "upbeat-pop-musical",
+      "mood": "Selected tracks: Another Day of Sun by La La Land Cast\nAudio profile: high energy, bright/uplifting, fast tempo (~132 BPM), danceable, mixed production, vocal-led",
+      "relevant": [
+        313369,
+        339403,
+        545611
+      ],
+      "expected_genres": [
+        "Music",
+        "Comedy",
+        "Romance"
+      ],
+      "track": "Another Day of Sun",
+      "artist": "La La Land Cast"
+    },
+    {
+      "id": "cold-minimal-electronic",
+      "mood": "Selected tracks: Hand Covers Bruise by Trent Reznor\nAudio profile: calm, dark/low valence, slow tempo (~68 BPM), low danceability, electronic/produced, instrumental",
+      "relevant": [
+        37799,
+        152601,
+        335984,
+        496243
+      ],
+      "expected_genres": [
+        "Drama",
+        "Thriller",
+        "Science Fiction",
+        "Mystery"
+      ],
+      "track": "Hand Covers Bruise",
+      "artist": "Trent Reznor"
+    },
+    {
+      "id": "quiet-folk-longing",
+      "mood": "Selected tracks: Re: Stacks by Bon Iver\nAudio profile: calm, dark/low valence, slow tempo (~76 BPM), low danceability, mostly acoustic, vocal-led",
+      "relevant": [
+        965150,
+        666277,
+        153,
+        376867
+      ],
+      "expected_genres": [
+        "Drama",
+        "Romance"
+      ],
+      "track": "Re: Stacks",
+      "artist": "Bon Iver"
+    },
+    {
+      "id": "arena-rock-anthem",
+      "mood": "Selected tracks: Danger Zone by Kenny Loggins\nAudio profile: high energy, bright/uplifting, fast tempo (~146 BPM), danceable, electronic/produced, vocal-led",
+      "relevant": [
+        361743,
+        245891,
+        76341
+      ],
+      "expected_genres": [
+        "Action",
+        "Adventure"
+      ],
+      "track": "Danger Zone",
+      "artist": "Kenny Loggins"
+    },
+    {
+      "id": "dreamy-shoegaze",
+      "mood": "Selected tracks: Only Shallow by My Bloody Valentine\nAudio profile: high energy, emotionally mixed, moderate tempo (~118 BPM), moderately rhythmic, electronic/produced, vocal-led",
+      "relevant": [
+        152601,
+        965150,
+        545611,
+        129
+      ],
+      "expected_genres": [
+        "Drama",
+        "Romance",
+        "Fantasy",
+        "Science Fiction"
+      ],
+      "track": "Only Shallow",
+      "artist": "My Bloody Valentine"
+    },
+    {
+      "id": "tense-percussive-thriller",
+      "mood": "Selected tracks: The Beast by Johann Johannsson\nAudio profile: high energy, dark/low valence, moderate tempo (~104 BPM), low danceability, mixed production, instrumental",
+      "relevant": [
+        273481,
+        329865,
+        496243,
+        374720
+      ],
+      "expected_genres": [
+        "Thriller",
+        "Crime",
+        "Mystery",
+        "War"
+      ],
+      "track": "The Beast",
+      "artist": "Johann Johannsson"
+    },
+    {
+      "id": "playful-childlike",
+      "mood": "Selected tracks: Merry-Go-Round of Life by Joe Hisaishi\nAudio profile: balanced energy, bright/uplifting, moderate tempo (~108 BPM), moderately rhythmic, mostly acoustic, instrumental",
+      "relevant": [
+        129,
+        116149,
+        194,
+        120467
+      ],
+      "expected_genres": [
+        "Animation",
+        "Family",
+        "Adventure",
+        "Fantasy",
+        "Comedy"
+      ],
+      "track": "Merry-Go-Round of Life",
+      "artist": "Joe Hisaishi"
+    },
+    {
+      "id": "gritty-urban-unease",
+      "mood": "Selected tracks: Bad Guy by Billie Eilish\nAudio profile: balanced energy, dark/low valence, moderate tempo (~135 BPM), danceable, electronic/produced, vocal-led",
+      "relevant": [
+        475557,
+        496243,
+        414906,
+        64690
+      ],
+      "expected_genres": [
+        "Crime",
+        "Drama",
+        "Thriller"
+      ],
+      "track": "bad guy",
+      "artist": "Billie Eilish"
+    },
+    {
+      "id": "vast-cosmic-wonder",
+      "mood": "Selected tracks: An Ending (Ascent) by Brian Eno\nAudio profile: calm, emotionally mixed, slow tempo (~58 BPM), low danceability, electronic/produced, instrumental",
+      "relevant": [
+        157336,
+        329865,
+        335984,
+        841
+      ],
+      "expected_genres": [
+        "Science Fiction",
+        "Adventure",
+        "Documentary",
+        "Drama"
+      ],
+      "track": "An Ending (Ascent)",
+      "artist": "Brian Eno"
+    }
+  ]
+}
