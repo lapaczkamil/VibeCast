@@ -1,11 +1,13 @@
 import type {
   AuthStatus,
   CurrentlyPlayingResponse,
+  MovieDetail,
   MovieSearchResponse,
   MoviesStatus,
   RagStatus,
   RateLimitStatus,
   RecentlyPlayedResponse,
+  RecommendMoodContext,
   RecommendResponse,
   SeedTrack,
   SessionResponse,
@@ -166,6 +168,36 @@ export async function fetchMoviesStatus(): Promise<MoviesStatus> {
   return res.json();
 }
 
+const movieDetailCache = new Map<number, MovieDetail>();
+
+export async function fetchMovieDetail(tmdbId: number): Promise<MovieDetail> {
+  const cached = movieDetailCache.get(tmdbId);
+  if (cached) return cached;
+
+  const res = await fetch(`/api/movies/${tmdbId}`);
+  if (!res.ok) {
+    if (res.status === 503) {
+      throw new Error(
+        await errorMessageFromResponse(res, "TMDB API key not configured"),
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(await errorMessageFromResponse(res, "Movie not found"));
+    }
+    if (res.status === 502) {
+      throw new Error(
+        await errorMessageFromResponse(res, "TMDB API request failed"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Failed to load movie details"),
+    );
+  }
+  const detail = (await res.json()) as MovieDetail;
+  movieDetailCache.set(tmdbId, detail);
+  return detail;
+}
+
 export async function searchMovies(
   q: string,
   page = 1,
@@ -231,19 +263,49 @@ export async function searchSpotifyTracks(
   return res.json();
 }
 
+function recommendTrackPayload(tracks: SeedTrack[]) {
+  return {
+    tracks: tracks.map((track) => ({
+      id: track.id,
+      name: track.name,
+      artists: track.artists,
+    })),
+  };
+}
+
+export async function fetchMoodContext(
+  tracks: SeedTrack[],
+): Promise<RecommendMoodContext> {
+  const res = await fetch("/api/recommend/mood-context", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(recommendTrackPayload(tracks)),
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        await errorMessageFromResponse(res, "Not authenticated"),
+      );
+    }
+    if (res.status === 422) {
+      throw new Error(
+        await errorMessageFromResponse(res, "At most 1 track allowed"),
+      );
+    }
+    throw new Error(
+      await errorMessageFromResponse(res, "Failed to load match signals"),
+    );
+  }
+  return res.json();
+}
+
 export async function requestRecommendations(
   tracks: SeedTrack[],
 ): Promise<RecommendResponse> {
   const res = await fetch("/api/recommend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tracks: tracks.map((track) => ({
-        id: track.id,
-        name: track.name,
-        artists: track.artists,
-      })),
-    }),
+    body: JSON.stringify(recommendTrackPayload(tracks)),
   });
   if (!res.ok) {
     if (res.status === 401) {

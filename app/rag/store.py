@@ -15,7 +15,7 @@ def _get_client() -> chromadb.PersistentClient:
 
 
 def get_collection():
-    return _get_client().get_or_create_collection(name=settings.rag_collection)
+    return _get_client().get_or_create_collection(name=settings.rag_collection, metadata={"hnsw:space": "cosine"})
 
 
 def upsert_movies(
@@ -50,3 +50,14 @@ def query_movies(
 
 def count_movies() -> int:
     return get_collection().count()
+
+
+def reset_collection() -> None:
+    client = _get_client()
+    name = settings.rag_collection
+    try:
+        client.delete_collection(name=name)
+    except Exception:
+        # Collection may not exist yet
+        pass
+    client.get_or_create_collection(name=name)

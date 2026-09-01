@@ -16,11 +16,19 @@ class RecommendMovieItem(BaseModel):
     poster_url: str | None = None
     rating: float | None = None
     reason: str
+    overview: str = ""
 
 
 class RecommendResponse(BaseModel):
     mood_summary: str
     items: list[RecommendMovieItem]
+
+
+class RecommendMoodContextResponse(BaseModel):
+    track_line: str
+    mood_query: str
+    audio_profile: str | None = None
+    rerank_enabled: bool = False
 
 
 class RecommendTrackSeed(BaseModel):

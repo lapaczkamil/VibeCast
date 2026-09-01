@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchRagStatus, requestRecommendations } from "../api";
+import { fetchMoodContext, fetchRagStatus, requestRecommendations } from "../api";
 import { nextIndex, prevIndex } from "../lib/carouselIndex";
 import {
   applyPosterPalette,
@@ -7,9 +7,14 @@ import {
   extractPosterPalette,
 } from "../lib/posterPalette";
 import { tmdbPosterUrl } from "../lib/tmdbPoster";
-import type { RagStatus, RecommendResponse, SeedTrack } from "../types";
+import type { RagStatus, RecommendMoodContext, RecommendResponse, SeedTrack } from "../types";
 import { MatchDropZone } from "./MatchDropZone";
+import {
+  MovieOverviewLightbox,
+  PosterHotspot,
+} from "./MovieOverviewLightbox";
 import { RecommendLoading } from "./RecommendLoading";
+import { SeedMatchSignals } from "./SeedMatchSignals";
 import { TmdbLogo } from "./TmdbLogo";
 
 type RecommendPhase = "idle" | "loading" | "empty" | "ok" | "error";
@@ -57,6 +62,12 @@ export function RecommendStage({
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loadingLine, setLoadingLine] = useState(0);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [moodContext, setMoodContext] = useState<RecommendMoodContext | null>(
+    null,
+  );
+  const [moodContextLoading, setMoodContextLoading] = useState(false);
+  const [moodContextError, setMoodContextError] = useState<string | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -71,6 +82,10 @@ export function RecommendStage({
   }, []);
 
   useEffect(() => {
+    setOverviewOpen(false);
+  }, [activeIndex, phase]);
+
+  useEffect(() => {
     if (phase !== "loading") return;
     setLoadingLine(0);
     const id = window.setInterval(() => {
@@ -78,6 +93,45 @@ export function RecommendStage({
     }, 1600);
     return () => window.clearInterval(id);
   }, [phase]);
+
+  useEffect(() => {
+    if (seeds.length === 0) {
+      setMoodContext(null);
+      setMoodContextError(null);
+      setMoodContextLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setMoodContextLoading(true);
+    setMoodContextError(null);
+
+    void fetchMoodContext(seeds)
+      .then((context) => {
+        if (!cancelled) {
+          setMoodContext(context);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setMoodContext(null);
+          setMoodContextError(
+            err instanceof Error
+              ? err.message
+              : "Could not load match signals.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMoodContextLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [seeds]);
 
   const runRecommend = useCallback(async () => {
     if (seeds.length === 0) return;
@@ -212,10 +266,9 @@ export function RecommendStage({
       <div className="stage-inner">
         {showMatchZone ? (
           <header className="stage-intro">
-            <p className="stage-eyebrow">Music → Movie</p>
             <h2 className="stage-heading">Match a film to one track</h2>
             <p className="stage-lede">
-              Open Listening and drop one track onto the slot.
+              Drag a track from Listening onto the slot.
             </p>
           </header>
         ) : (
@@ -237,23 +290,39 @@ export function RecommendStage({
         ) : null}
 
         {showMatchZone ? (
-          <MatchDropZone
-            seeds={seeds}
-            active={seedDragging}
-            disabled={false}
-            onDropSeed={onDropSeed}
-            onRemoveSeed={onRemoveSeed}
-          />
+          <>
+            <MatchDropZone
+              seeds={seeds}
+              active={seedDragging}
+              disabled={false}
+              onDropSeed={onDropSeed}
+              onRemoveSeed={onRemoveSeed}
+            />
+            {hasSeeds ? (
+              <SeedMatchSignals
+                context={moodContext}
+                loading={moodContextLoading}
+                error={moodContextError}
+              />
+            ) : null}
+          </>
         ) : null}
 
         {showSelectedTrack ? (
-          <MatchDropZone
-            seeds={seeds}
-            active={seedDragging}
-            disabled={false}
-            onDropSeed={onDropSeed}
-            onRemoveSeed={onRemoveSeed}
-          />
+          <>
+            <MatchDropZone
+              seeds={seeds}
+              active={seedDragging}
+              disabled={false}
+              onDropSeed={onDropSeed}
+              onRemoveSeed={onRemoveSeed}
+            />
+            <SeedMatchSignals
+              context={moodContext}
+              loading={moodContextLoading}
+              error={moodContextError}
+            />
+          </>
         ) : null}
 
         {phase === "loading" ? (
@@ -322,7 +391,35 @@ export function RecommendStage({
                         className={`stage-stack-card stage-stack-card--${role}`}
                         aria-hidden={role !== "current"}
                       >
-                        {poster ? (
+                        {role === "current" ? (
+                          <PosterHotspot
+                            label={`View overview for ${movie.title}`}
+                            onOpen={() => setOverviewOpen(true)}
+                          >
+                            {poster ? (
+                              <img
+                                className="stage-poster"
+                                src={poster}
+                                srcSet={posterSrcSet}
+                                sizes="(max-width: 640px) 55vw, 22rem"
+                                alt=""
+                                width={390}
+                                height={585}
+                                draggable={false}
+                                crossOrigin="anonymous"
+                                loading="eager"
+                                decoding="async"
+                              />
+                            ) : (
+                              <div
+                                className="stage-poster stage-poster--placeholder"
+                                aria-hidden="true"
+                              >
+                                ?
+                              </div>
+                            )}
+                          </PosterHotspot>
+                        ) : poster ? (
                           <img
                             className="stage-poster"
                             src={poster}
@@ -333,7 +430,7 @@ export function RecommendStage({
                             height={585}
                             draggable={false}
                             crossOrigin="anonymous"
-                            loading={role === "current" ? "eager" : "lazy"}
+                            loading="lazy"
                             decoding="async"
                           />
                         ) : (
@@ -408,6 +505,13 @@ export function RecommendStage({
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {overviewOpen && activeMovie ? (
+          <MovieOverviewLightbox
+            movie={activeMovie}
+            onClose={() => setOverviewOpen(false)}
+          />
         ) : null}
 
         <button

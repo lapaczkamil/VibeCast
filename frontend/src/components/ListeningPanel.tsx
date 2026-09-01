@@ -14,14 +14,11 @@ import type {
   TopTracksResponse,
   TrackSearchItem,
 } from "../types";
-import { Drawer } from "./Drawer";
 import { DashboardSection } from "./DashboardSection";
 import { NowPlaying } from "./NowPlaying";
 import { RecentTrackList, TopTrackList } from "./TrackList";
 
-type ListeningDrawerProps = {
-  open: boolean;
-  onClose: () => void;
+export type ListeningPanelProps = {
   currentlyPlaying: SectionState<CurrentlyPlayingResponse>;
   recentlyPlayed: SectionState<RecentlyPlayedResponse>;
   topTracks: SectionState<TopTracksResponse>;
@@ -29,12 +26,13 @@ type ListeningDrawerProps = {
   onTopTracksRangeChange: (range: TopTracksRange) => void;
   seeds: SeedTrack[];
   onClearSeeds: () => void;
-  seedDragging: boolean;
   onSeedDragStart: (track: SeedTrack) => void;
   onSeedDragEnd: () => void;
   onRetryCurrentlyPlaying: () => void;
   onRetryRecentlyPlayed: () => void;
   onRetryTopTracks: () => void;
+  /** Mobile overlay closed — remove from tab order and accessibility tree. */
+  inert?: boolean;
 };
 
 function SearchResultRow({
@@ -104,7 +102,7 @@ function SearchResultRow({
   );
 }
 
-export function ListeningDrawer(props: ListeningDrawerProps) {
+export function ListeningPanel(props: ListeningPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -112,16 +110,6 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
   const [searchResults, setSearchResults] = useState<TrackSearchItem[]>([]);
 
   const selectedIds = new Set(props.seeds.map((s) => s.id));
-
-  useEffect(() => {
-    if (!props.open) {
-      setSearchQuery("");
-      setActiveQuery("");
-      setSearchResults([]);
-      setSearchError(null);
-      setSearchLoading(false);
-    }
-  }, [props.open]);
 
   useEffect(() => {
     if (!activeQuery) {
@@ -161,16 +149,17 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
     setActiveQuery(searchQuery.trim());
   };
 
+  const hidden = props.inert === true;
+
   return (
-    <Drawer
-      title="Listening"
-      open={props.open}
-      onClose={props.onClose}
-      softBackdrop
-      passThroughBackdrop={props.seedDragging}
+    <aside
+      id="listening-panel"
+      className="listening-panel"
+      aria-label="Listening"
+      {...(hidden ? { inert: true, "aria-hidden": true } : {})}
     >
-      <div className="listening-drawer">
-        <div className="listening-drawer-scroll">
+      <div className="listening-panel-body">
+        <div className="listening-panel-scroll">
           <section className="listening-search" aria-label="Search Spotify tracks">
             <label className="listening-search-label" htmlFor="track-search">
               Search tracks
@@ -325,6 +314,6 @@ export function ListeningDrawer(props: ListeningDrawerProps) {
           </div>
         </footer>
       </div>
-    </Drawer>
+    </aside>
   );
 }

@@ -16,7 +16,8 @@ type AppChromeProps = {
   currentlyPlaying: SectionState<CurrentlyPlayingResponse>;
   loggingOut: boolean;
   onLogout: () => void;
-  onOpenListening: () => void;
+  listeningOpen: boolean;
+  onToggleListening: () => void;
   onOpenSearch: () => void;
 };
 
@@ -25,7 +26,8 @@ export function AppChrome({
   currentlyPlaying,
   loggingOut,
   onLogout,
-  onOpenListening,
+  listeningOpen,
+  onToggleListening,
   onOpenSearch,
 }: AppChromeProps) {
   const displayName =
@@ -46,10 +48,12 @@ export function AppChrome({
               type="button"
               className={
                 isPlaying
-                  ? "chrome-btn chrome-btn--nav chrome-btn--live"
-                  : "chrome-btn chrome-btn--nav"
+                  ? "chrome-btn chrome-btn--nav chrome-btn--listening chrome-btn--live"
+                  : "chrome-btn chrome-btn--nav chrome-btn--listening"
               }
-              onClick={onOpenListening}
+              aria-expanded={listeningOpen}
+              aria-controls="listening-panel"
+              onClick={onToggleListening}
             >
               Listening
               {isPlaying ? (

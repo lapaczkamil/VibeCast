@@ -2,20 +2,26 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
 
 from app.config import settings
 from app.movies.client import _map_poster_url, _map_rating, fetch_movie
-from app.rag.ollama_client import chat_json, embed_texts
+from app.rag.ollama_client import chat_json, embed_query
 from app.rag.schemas import (
     RecommendMovieItem,
+    RecommendMoodContextResponse,
     RecommendRequest,
     RecommendResponse,
     RecommendTrackSeed,
 )
 from app.rag.store import query_movies
+from app.reccobeats.client import fetch_audio_features
+from app.reccobeats.mood import format_audio_profile
+from app.reccobeats.rerank import rerank_candidates
+from app.reccobeats.schemas import AudioFeatures
 from app.spotify.client import (
     fetch_currently_playing,
     fetch_recently_played,
@@ -29,6 +35,7 @@ from app.spotify.client import (
 from app.spotify.routes import _authed_spotify
 
 RAG_TOP_K = 8
+RAG_FETCH_K = 16
 RECENT_LIMIT = 10
 TOP_TRACKS_LIMIT = 5
 TOP_ARTISTS_LIMIT = 5
@@ -37,6 +44,14 @@ MAX_SEEDS = 1
 
 class RecommendationParseError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class _MoodResolution:
+    mood_query: str
+    track_line: str
+    audio_profile: str | None
+    features: AudioFeatures | None
 
 
 def build_mood_query(
@@ -167,15 +182,32 @@ async def _gather_spotify_lines() -> tuple[str | None, list[str], list[str], lis
     return now_playing_line, recent_lines, top_track_lines, top_artist_lines
 
 
+def overview_from_document(document: str) -> str:
+    """Extract TMDB overview text from a Chroma movie document."""
+    lines = document.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("Overview:"):
+            first = line.removeprefix("Overview:").strip()
+            rest = "\n".join(lines[index + 1 :]).strip()
+            parts = [part for part in (first, rest) if part]
+            return "\n".join(parts).strip()
+    return ""
+
+
 def _map_validated_items(
     llm_items: list[dict[str, Any]],
+    documents: list[str],
     metadatas: list[dict[str, Any]],
 ) -> list[RecommendMovieItem]:
     candidates_by_id: dict[int, dict[str, Any]] = {}
-    for metadata in metadatas:
+    overview_by_id: dict[int, str] = {}
+    for document, metadata in zip(documents, metadatas, strict=True):
         tmdb_id = metadata.get("tmdb_id")
-        if tmdb_id is not None:
-            candidates_by_id[int(tmdb_id)] = metadata
+        if tmdb_id is None:
+            continue
+        key = int(tmdb_id)
+        candidates_by_id[key] = metadata
+        overview_by_id[key] = overview_from_document(document)
 
     validated: list[RecommendMovieItem] = []
     for item in llm_items:
@@ -196,6 +228,7 @@ def _map_validated_items(
                 poster_url=_map_poster_url(meta.get("poster_path"), size="w780"),
                 rating=_map_rating(meta.get("rating")),
                 reason=str(item.get("reason") or ""),
+                overview=overview_by_id.get(int(tmdb_id), ""),
             )
         )
     return validated
@@ -235,9 +268,9 @@ async def _enrich_missing_ratings(
     ]
 
 
-async def recommend_for_user(
+async def _resolve_mood(
     request: RecommendRequest | None = None,
-) -> RecommendResponse:
+) -> _MoodResolution:
     request = request or RecommendRequest()
     if len(request.tracks) > MAX_SEEDS:
         raise HTTPException(status_code=422, detail="At most 1 track allowed")
@@ -245,6 +278,8 @@ async def recommend_for_user(
     seeds = _normalize_seeds(request.tracks)
     if seeds:
         mood_query = _build_mood_from_seeds(seeds)
+        track_line = _track_line(seeds[0].name, seeds[0].artists)
+        seed_id = seeds[0].id
     else:
         now_playing_line = await _now_playing_line_only()
         if not now_playing_line:
@@ -253,9 +288,56 @@ async def recommend_for_user(
                 detail="Select at least one track or start playing music",
             )
         mood_query = now_playing_line
+        track_line = now_playing_line.removeprefix("Now: ")
+        seed_id = None
 
-    embedding = embed_texts([mood_query])[0]
-    documents, metadatas = query_movies(embedding, RAG_TOP_K)
+    features = None
+    if seed_id:
+        features = await fetch_audio_features(seed_id)
+
+    audio_profile: str | None = None
+    if features is not None:
+        profile = format_audio_profile(features)
+        if profile:
+            audio_profile = profile
+            mood_query = f"{mood_query}\nAudio profile: {profile}"
+
+    return _MoodResolution(
+        mood_query=mood_query,
+        track_line=track_line,
+        audio_profile=audio_profile,
+        features=features,
+    )
+
+
+async def build_mood_context(
+    request: RecommendRequest | None = None,
+) -> RecommendMoodContextResponse:
+    resolved = await _resolve_mood(request)
+    return RecommendMoodContextResponse(
+        track_line=resolved.track_line,
+        mood_query=resolved.mood_query,
+        audio_profile=resolved.audio_profile,
+        rerank_enabled=resolved.features is not None,
+    )
+
+
+async def recommend_for_user(
+    request: RecommendRequest | None = None,
+) -> RecommendResponse:
+    resolved = await _resolve_mood(request)
+    mood_query = resolved.mood_query
+    features = resolved.features
+
+    embedding = embed_query(mood_query)
+    fetch_k = RAG_FETCH_K if features is not None else RAG_TOP_K
+    documents, metadatas = query_movies(embedding, fetch_k)
+    if features is not None and documents:
+        documents, metadatas = rerank_candidates(
+            documents, metadatas, features, keep=RAG_TOP_K
+        )
+    else:
+        documents, metadatas = documents[:RAG_TOP_K], metadatas[:RAG_TOP_K]
 
     prompt = _build_recommendation_prompt(mood_query, documents, metadatas)
     raw = chat_json(prompt)
@@ -267,7 +349,7 @@ async def recommend_for_user(
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise RecommendationParseError() from exc
 
-    items = _map_validated_items(llm_items, metadatas)
+    items = _map_validated_items(llm_items, documents, metadatas)
     items = await _enrich_missing_ratings(items)
     return RecommendResponse(
         mood_summary=mood_summary,
