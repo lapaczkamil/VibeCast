@@ -46,8 +46,9 @@ const PLACEHOLDER_PROFILE: SpotifyProfile = {
 
 /** Manual refresh cooldown — avoids burning Development Mode quota. */
 const REFRESH_COOLDOWN_MS = 5 * 60_000;
-/** Now-playing poll — slightly above backend/client cache TTL. */
-const NOW_PLAYING_POLL_MS = 25_000;
+/** Now-playing poll. Paused while the tab is hidden and backed off on 429,
+ * so ~12 req/min is only spent when someone is actually watching. */
+const NOW_PLAYING_POLL_MS = 5_000;
 /** Recently-played steady refresh. */
 const RECENTLY_PLAYED_POLL_MS = 3 * 60_000;
 

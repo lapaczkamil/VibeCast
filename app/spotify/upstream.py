@@ -21,7 +21,7 @@ _CIRCUIT_FILE = Path("/tmp/vibecast_spotify_circuit")
 TTL_ME = 1800.0  # 30 min
 TTL_TOP = 1800.0  # 30 min
 TTL_RECENT = 180.0  # 3 min — matches frontend steady refresh
-TTL_NOW = 20.0  # 20 s — keep now-playing polls mostly fresh
+TTL_NOW = 3.0  # 3 s — short enough that a track change shows up promptly
 TTL_SEARCH = 120.0  # 2 min
 
 

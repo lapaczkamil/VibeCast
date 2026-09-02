@@ -75,8 +75,9 @@ let currentlyPlayingClientCache: {
   data: CurrentlyPlayingResponse;
 } | null = null;
 
-/** Align with backend TTL_NOW so StrictMode / overlapping polls don't spam Spotify. */
-const CURRENTLY_PLAYING_CLIENT_TTL_MS = 20_000;
+/** Only wide enough to collapse StrictMode double-mounts and overlapping polls;
+ * anything larger would swallow the poll interval below it. */
+const CURRENTLY_PLAYING_CLIENT_TTL_MS = 2_000;
 
 let currentlyPlayingInFlight: Promise<CurrentlyPlayingResponse> | null = null;
 
