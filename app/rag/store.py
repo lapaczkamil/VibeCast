@@ -14,8 +14,21 @@ def _get_client() -> chromadb.PersistentClient:
     return _client
 
 
+# Every embedding model here is trained for cosine; Chroma defaults to l2.
+COLLECTION_CONFIG = {"hnsw": {"space": "cosine"}}
+
+
 def get_collection():
-    return _get_client().get_or_create_collection(name=settings.rag_collection, metadata={"hnsw:space": "cosine"})
+    """The only place a collection is created, so the metric cannot drift.
+
+    Index configuration is immutable once written, and get_or_create silently
+    returns an existing collection unchanged -- so a second creation site that
+    forgets the config bakes in the default and nothing ever corrects it.
+    """
+    return _get_client().get_or_create_collection(
+        name=settings.rag_collection,
+        configuration=COLLECTION_CONFIG,
+    )
 
 
 def upsert_movies(
@@ -59,11 +72,9 @@ def count_movies() -> int:
 
 
 def reset_collection() -> None:
-    client = _get_client()
-    name = settings.rag_collection
     try:
-        client.delete_collection(name=name)
+        _get_client().delete_collection(name=settings.rag_collection)
     except Exception:
         # Collection may not exist yet
         pass
-    client.get_or_create_collection(name=name)
+    get_collection()

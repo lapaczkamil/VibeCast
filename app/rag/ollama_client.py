@@ -34,16 +34,24 @@ def prepare_query_text(text: str, *, model: str | None = None) -> str:
 
 
 def _embed_texts(texts: list[str]) -> list[list[float]]:
-    embeddings: list[list[float]] = []
+    """Embed a batch in one request.
+
+    /api/embed takes a list and returns unit-length vectors, unlike the legacy
+    /api/embeddings, which took one prompt per call and returned raw ones.
+    """
+    if not texts:
+        return []
     with httpx.Client(timeout=OLLAMA_TIMEOUT) as client:
-        for text in texts:
-            response = client.post(
-                f"{settings.ollama_base_url}/api/embeddings",
-                json={"model": settings.ollama_embed_model, "prompt": text},
-            )
-            response.raise_for_status()
-            payload = response.json()
-            embeddings.append(payload["embedding"])
+        response = client.post(
+            f"{settings.ollama_base_url}/api/embed",
+            json={"model": settings.ollama_embed_model, "input": texts},
+        )
+        response.raise_for_status()
+        embeddings = response.json().get("embeddings") or []
+    if len(embeddings) != len(texts):
+        raise RuntimeError(
+            f"Ollama returned {len(embeddings)} embeddings for {len(texts)} inputs"
+        )
     return embeddings
 
 
