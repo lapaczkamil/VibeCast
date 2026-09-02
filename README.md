@@ -73,6 +73,8 @@ This **rebuilds** `data/chroma/` from a mix of ~70% well-rated TMDB discover mov
 
 Each document also carries TMDB keywords and the tagline, which supply the tonal vocabulary that plot summaries lack (`RAG_ENRICH_DOCUMENTS=false` to skip; it costs one extra TMDB call per movie, fetched with `RAG_ENRICH_WORKERS` threads).
 
+Only movies rated `RAG_MIN_RATING` (default 7.0) and above are indexed, enforced on both TMDB sources. The title line is stored but **not embedded** by default — it moves a document's vector more than any other line while saying little about mood. Set `RAG_EMBED_TITLE=true` to include it.
+
 Check readiness: [http://127.0.0.1:8000/rag/status](http://127.0.0.1:8000/rag/status) — `index_ready` should be `true` when ingest finished.
 
 ### 3. Evaluating retrieval

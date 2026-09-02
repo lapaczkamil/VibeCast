@@ -31,30 +31,32 @@ class Hypothetical:
 def build_hyde_prompt(mood_query: str, lyrics: str | None = None) -> str:
     lyrics_block = (
         f"""
-Lyrics excerpt. Use the situation, imagery and point of view it describes.
-Do not quote it, and do not write a movie about a song:
-{lyrics}
-"""
+        Lyrics excerpt. Use the situation, imagery and point of view it describes.
+        Do not quote it, and do not write a movie about a song:
+        {lyrics}
+        """
         if lyrics
         else ""
     )
-    return f"""You turn a listener's music mood into the description of a movie that matches it.
+    return f"""
+            You turn a listener's music mood into the description of a movie that matches it.
 
-Music context:
-{mood_query}
-{lyrics_block}
-The audio profile describes the music's emotional register, not the movie's genre.
-Read "dark" as somber or melancholic rather than frightening, and treat tempo and
-danceability as pacing, not as subject matter.
+            Music context:
+            {mood_query}
+            {lyrics_block}
+            The audio profile describes the music's emotional register, not the movie's genre.
+            Read "dark" as somber or melancholic rather than frightening, and treat tempo and
+            danceability as pacing, not as subject matter.
 
-Invent one movie that fits this mood. Describe it the way a film catalogue would:
-tone, pacing, atmosphere, setting, the emotional register. Do not name real
-movies, real people or the songs above, and do not write a film about music
-unless the mood is genuinely about performing or making music.
+            Invent one movie that fits this mood. Describe it the way a film catalogue would:
+            tone, pacing, atmosphere, setting, the emotional register. Do not name real
+            movies, real people or the songs above, and do not write a film about music
+            unless the mood is genuinely about performing or making music.
 
-Return JSON only with this shape:
-{{"mood_summary": "short phrase", "genres": ["..."], "overview": "2 to 3 sentences"}}
-Pick genres only from: {TMDB_GENRES}"""
+            Return JSON only with this shape:
+            {{"mood_summary": "short phrase", "genres": ["..."], "overview": "2 to 3 sentences"}}
+            Pick genres only from: {TMDB_GENRES} 
+            """
 
 
 def format_hypothetical_document(genres: list[str], overview: str) -> str:

@@ -536,3 +536,53 @@ def test_recommend_retrieves_with_the_hypothetical_document(monkeypatch):
     # The lyrics are looked up for the seed track and handed to the rewrite.
     assert captured["lyrics_args"] == ("Nightcall", ["Kavinsky"])
     assert captured["lyrics"] == "driving through the city at night"
+
+
+def test_titles_agree_accepts_variants():
+    from app.rag.recommend import titles_agree
+
+    assert titles_agree("Amelie", "Amélie")           # accents folded
+    assert titles_agree("Blade Runner", "Blade Runner 2049")   # partial overlap
+    assert titles_agree("the wages of fear", "The Wages of Fear")
+    assert titles_agree("", "The Wages of Fear")      # no title claimed: not a conflict
+
+
+def test_titles_agree_rejects_a_different_movie():
+    from app.rag.recommend import titles_agree
+
+    assert not titles_agree("The Fast and the Furious", "The Wages of Fear")
+    assert not titles_agree("Deep Red", "Blue Velvet")
+
+
+def test_title_always_comes_from_the_catalog_not_the_model():
+    from app.rag.recommend import _map_validated_items
+
+    metas = [{"tmdb_id": 1, "title": "The Wages of Fear", "year": "1953", "rating": 8.0}]
+    docs = ["The Wages of Fear (1953)\nGenres: Thriller\nOverview: Nitroglycerine."]
+    # A close-enough title still gets replaced by the catalog spelling.
+    items = _map_validated_items(
+        [{"tmdb_id": 1, "title": "Wages of Fear", "reason": "tense"}], docs, metas
+    )
+    assert items[0].title == "The Wages of Fear"
+
+
+def test_a_pick_naming_a_different_movie_is_dropped():
+    from app.rag.recommend import _map_validated_items
+
+    metas = [
+        {"tmdb_id": 1, "title": "The Wages of Fear", "year": "1953", "rating": 8.0},
+        {"tmdb_id": 2, "title": "Blue Velvet", "year": "1986", "rating": 7.6},
+    ]
+    docs = [
+        "The Wages of Fear (1953)\nGenres: Thriller\nOverview: Nitroglycerine.",
+        "Blue Velvet (1986)\nGenres: Mystery\nOverview: A severed ear.",
+    ]
+    items = _map_validated_items(
+        [
+            {"tmdb_id": 1, "title": "The Fast and the Furious", "reason": "street gangs"},
+            {"tmdb_id": 2, "title": "Blue Velvet", "reason": "surreal"},
+        ],
+        docs,
+        metas,
+    )
+    assert [item.tmdb_id for item in items] == [2]

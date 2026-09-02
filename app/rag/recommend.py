@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +37,8 @@ from app.spotify.client import (
     map_top_tracks,
 )
 from app.spotify.routes import _authed_spotify
+
+logger = logging.getLogger(__name__)
 
 RAG_TOP_K = 8
 RAG_FETCH_K = 16
@@ -196,6 +201,31 @@ def overview_from_document(document: str) -> str:
     return ""
 
 
+_TITLE_NOISE = {"the", "a", "an", "of", "and", "le", "la", "les", "el"}
+
+
+def _title_tokens(title: str) -> set[str]:
+    """Comparable words of a title, accents and punctuation folded away."""
+    folded = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    words = re.findall(r"[a-z0-9]+", folded.casefold())
+    return {word for word in words if word not in _TITLE_NOISE}
+
+
+def titles_agree(llm_title: str, catalog_title: str) -> bool:
+    """Whether the model's title plausibly names the movie it picked.
+
+    The model returns a tmdb_id and a title separately; when they disagree it
+    has confused two candidates, and its reason describes the wrong film.
+    """
+    if not llm_title:
+        return True
+    llm_tokens = _title_tokens(llm_title)
+    catalog_tokens = _title_tokens(catalog_title)
+    if not llm_tokens or not catalog_tokens:
+        return True
+    return bool(llm_tokens & catalog_tokens)
+
+
 def _map_validated_items(
     llm_items: list[dict[str, Any]],
     documents: list[str],
@@ -219,13 +249,23 @@ def _map_validated_items(
         meta = candidates_by_id.get(int(tmdb_id))
         if meta is None:
             continue
+        catalog_title = str(meta.get("title") or "Unknown")
+        if not titles_agree(str(item.get("title") or ""), catalog_title):
+            # id and title name different movies, so the reason is unusable.
+            logger.warning(
+                "Dropping confused pick: tmdb_id=%s catalog=%r model=%r",
+                tmdb_id,
+                catalog_title,
+                item.get("title"),
+            )
+            continue
         year = meta.get("year") or None
         if year == "":
             year = None
         validated.append(
             RecommendMovieItem(
                 tmdb_id=int(tmdb_id),
-                title=str(item.get("title") or meta.get("title") or "Unknown"),
+                title=catalog_title,
                 year=year,
                 poster_url=_map_poster_url(meta.get("poster_path"), size="w780"),
                 rating=_map_rating(meta.get("rating")),

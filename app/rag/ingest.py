@@ -32,6 +32,23 @@ MAX_RETRY_SLEEP_SECONDS = 30.0
 
 
 MAX_KEYWORDS = 12
+# Prefixes of every non-title line, so title stripping cannot eat a real field.
+FIELD_PREFIXES = ("Genres:", "Keywords:", "Tagline:", "Overview:")
+
+
+def embedding_text(document: str) -> str:
+    """The text actually embedded, which need not be the stored document.
+
+    The title dominates a document's vector more than any other line, yet says
+    almost nothing about mood. Dropping it from the embedding costs nothing:
+    the title stays in the document and in the metadata.
+    """
+    if settings.rag_embed_title:
+        return document
+    lines = document.splitlines()
+    if lines and not lines[0].startswith(FIELD_PREFIXES):
+        return "\n".join(lines[1:])
+    return document
 
 
 def _build_document(
@@ -251,6 +268,19 @@ def run_ingest() -> int:
             "start Ollama and pull the embed model"
         )
 
+    # The path alone is ambiguous: one Chroma directory holds many collections.
+    print(
+        f"Ingest -> collection={settings.rag_collection!r} "
+        f"path={settings.rag_chroma_path}\n"
+        f"  target={settings.rag_movie_target} "
+        f"min_rating={settings.rag_min_rating} "
+        f"discover_share={settings.rag_discover_share} "
+        f"vote_count>={settings.rag_discover_vote_count_gte}\n"
+        f"  embed_title={settings.rag_embed_title} "
+        f"enrich={settings.rag_enrich_documents} "
+        f"embed_model={settings.ollama_embed_model!r}"
+    )
+
     genre_response = fetch_genre_list_sync(api_key)
     if genre_response.status_code != 200:
         raise RuntimeError("Failed to fetch TMDB genre list")
@@ -296,11 +326,16 @@ def run_ingest() -> int:
             }
             for movie in batch
         ]
-        embeddings = embed_documents(documents)
+        embeddings = embed_documents(
+            [embedding_text(document) for document in documents]
+        )
         upsert_movies(ids, documents, metadatas, embeddings)
         indexed += len(batch)
 
-    print(f"Indexed {indexed} movies into {settings.rag_chroma_path}")
+    print(
+        f"Indexed {indexed} movies into collection "
+        f"{settings.rag_collection!r} at {settings.rag_chroma_path}"
+    )
     return indexed
 
 

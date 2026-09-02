@@ -531,3 +531,44 @@ def test_get_collection_creates_with_cosine(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(store_mod, "_client", None)
 
     assert store_mod.get_collection().configuration_json["hnsw"]["space"] == "cosine"
+
+
+def _doc() -> str:
+    return ingest_mod._build_document(
+        "Blue Velvet", "1986", ["Mystery", "Thriller"], "A severed ear is found.",
+        ["surrealism", "voyeurism"], "It's a strange world, isn't it?",
+    )
+
+
+def test_embedding_text_drops_the_title_line(monkeypatch):
+    monkeypatch.setattr(ingest_mod.settings, "rag_embed_title", False)
+    text = ingest_mod.embedding_text(_doc())
+    assert text.startswith("Genres: Mystery, Thriller")
+    assert "Blue Velvet" not in text
+    # Everything else survives.
+    assert "Keywords:" in text and "Tagline:" in text and "Overview:" in text
+
+
+def test_embedding_text_keeps_the_title_when_enabled(monkeypatch):
+    monkeypatch.setattr(ingest_mod.settings, "rag_embed_title", True)
+    assert ingest_mod.embedding_text(_doc()) == _doc()
+
+
+def test_embedding_text_never_eats_a_real_field(monkeypatch):
+    """A document that somehow starts with a field must keep it."""
+    monkeypatch.setattr(ingest_mod.settings, "rag_embed_title", False)
+    titleless = "Genres: Drama\nOverview: A story."
+    assert ingest_mod.embedding_text(titleless) == titleless
+
+
+def test_embedding_text_handles_an_empty_document(monkeypatch):
+    monkeypatch.setattr(ingest_mod.settings, "rag_embed_title", False)
+    assert ingest_mod.embedding_text("") == ""
+
+
+def test_stored_document_still_carries_the_title(monkeypatch):
+    """Only the embedding loses the title; the document the LLM reads keeps it."""
+    monkeypatch.setattr(ingest_mod.settings, "rag_embed_title", False)
+    document = _doc()
+    assert document.splitlines()[0] == "Blue Velvet (1986)"
+    assert "Blue Velvet" not in ingest_mod.embedding_text(document)
