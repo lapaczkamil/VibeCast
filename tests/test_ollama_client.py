@@ -40,10 +40,12 @@ def test_embed_uses_one_batched_request():
     import respx
     from httpx import Response
 
+    from app.config import settings
+
     from app.rag.ollama_client import embed_documents
 
     with respx.mock:
-        route = respx.post("http://127.0.0.1:11434/api/embed").mock(
+        route = respx.post(f"{settings.ollama_base_url}/api/embed").mock(
             return_value=Response(200, json={"embeddings": [[0.1], [0.2], [0.3]]})
         )
         result = embed_documents(["a", "b", "c"])
@@ -59,10 +61,12 @@ def test_embed_query_returns_a_single_vector():
     import respx
     from httpx import Response
 
+    from app.config import settings
+
     from app.rag.ollama_client import embed_query
 
     with respx.mock:
-        respx.post("http://127.0.0.1:11434/api/embed").mock(
+        respx.post(f"{settings.ollama_base_url}/api/embed").mock(
             return_value=Response(200, json={"embeddings": [[0.4, 0.5]]})
         )
         assert embed_query("mood") == [0.4, 0.5]
@@ -71,10 +75,11 @@ def test_embed_query_returns_a_single_vector():
 def test_embed_of_nothing_skips_the_request():
     import respx
 
+    from app.config import settings
     from app.rag.ollama_client import embed_documents
 
     with respx.mock:
-        route = respx.post("http://127.0.0.1:11434/api/embed")
+        route = respx.post(f"{settings.ollama_base_url}/api/embed")
         assert embed_documents([]) == []
         assert route.call_count == 0
 
@@ -84,10 +89,12 @@ def test_short_embedding_batch_is_an_error():
     import respx
     from httpx import Response
 
+    from app.config import settings
+
     from app.rag.ollama_client import embed_documents
 
     with respx.mock:
-        respx.post("http://127.0.0.1:11434/api/embed").mock(
+        respx.post(f"{settings.ollama_base_url}/api/embed").mock(
             return_value=Response(200, json={"embeddings": [[0.1]]})
         )
         with pytest.raises(RuntimeError, match="1 embeddings for 3 inputs"):

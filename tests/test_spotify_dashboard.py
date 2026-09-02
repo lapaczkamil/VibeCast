@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.spotify import oauth
+from app.spotify import upstream as spotify_upstream
 from app.spotify.oauth import TokenSet
 
 
@@ -15,6 +16,10 @@ client = TestClient(app)
 def setup_function() -> None:
     oauth.clear_tokens()
     oauth.clear_pending_state()
+    # The upstream TTL cache is module state: without this, an earlier test's
+    # response is served to a later one and the mock never gets called.
+    spotify_upstream.clear_cache()
+    spotify_upstream.clear_circuit()
 
 
 def test_me_unauthorized_without_token():
